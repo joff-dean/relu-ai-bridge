@@ -1,0 +1,117 @@
+{
+  "id": "battery-viewer",
+  "displayName": "Android Battery Log Viewer",
+  "tokenEnv": "RELU_BATTERY_CONNECTOR_TOKEN",
+  "origins": [
+    "https://battery.internal.example"
+  ],
+  "bindingFields": ["payloadId"],
+  "contextSchema": {
+    "type": "object",
+    "properties": {
+      "payloadId": { "type": "string", "maxLength": 128 },
+      "view": { "type": "string", "maxLength": 64 },
+      "selection": {
+        "type": "object",
+        "properties": {
+          "startMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+          "endMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+        },
+        "required": ["startMs", "endMs"],
+        "additionalProperties": false
+      }
+    },
+    "required": ["payloadId", "view"],
+    "additionalProperties": false
+  },
+  "capabilities": [
+    {
+      "name": "get_stats",
+      "description": "현재 payload와 선택 구간의 배터리 통계를 조회한다.",
+      "transport": "browser",
+      "effect": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "averageCurrentMa": { "type": "number", "minimum": -100000, "maximum": 100000 },
+          "sampleCount": { "type": "integer", "minimum": 0, "maximum": 1000000 }
+        },
+        "required": ["averageCurrentMa", "sampleCount"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "search_logs",
+      "description": "고정된 사내 로그 API에서 제한된 문자열을 검색한다.",
+      "transport": "http",
+      "effect": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 200 }
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "matches": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "type": "object",
+              "properties": {
+                "timestampMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                "text": { "type": "string", "maxLength": 2000 }
+              },
+              "required": ["timestampMs", "text"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["matches"],
+        "additionalProperties": false
+      },
+      "http": {
+        "url": "https://logs-api.internal.example/api/ai/search",
+        "method": "POST",
+        "timeoutMs": 15000,
+        "auth": {
+          "header": "authorization",
+          "env": "RELU_LOG_API_AUTHORIZATION"
+        }
+      }
+    },
+    {
+      "name": "focus_range",
+      "description": "웹 뷰어의 표시 구간을 이동한다.",
+      "transport": "browser",
+      "effect": "ui_mutation",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "startMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+          "endMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+        },
+        "required": ["startMs", "endMs"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "focused": { "type": "boolean" }
+        },
+        "required": ["focused"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "name": "relu-ai-bridge",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Local-first context and data bridge that connects Claude/Codex to allowlisted company web-service capabilities.",
+  "type": "module",
+  "bin": {
+    "relu-ai-bridge": "./bin/relu-ai-bridge.mjs"
+  },
+  "scripts": {
+    "start": "node ./bin/relu-ai-bridge.mjs serve",
+    "init": "node ./bin/relu-ai-bridge.mjs init",
+    "doctor": "node ./bin/relu-ai-bridge.mjs doctor",
+    "archive-ledger": "node ./bin/relu-ai-bridge.mjs archive-ledger",
+    "test": "node --test",
+    "check": "node ./scripts/check-syntax.mjs && node --test"
+  },
+  "engines": {
+    "node": ">=20.11"
+  },
+  "license": "UNLICENSED"
+}

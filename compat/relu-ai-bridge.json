@@ -1,0 +1,24 @@
+{
+  "$schema": "./relu-compatibility.schema.json",
+  "schema_version": 1,
+  "product": {
+    "id": "relu-ai-bridge",
+    "name": "RELU AI Bridge",
+    "core_version": "0.3.0",
+    "scope": "company-internal-web-service-ai-bridge"
+  },
+  "release": {
+    "tag_prefix": "relu-ai-bridge-v",
+    "immutable_ref_namespace": "refs/releases/relu-ai-bridge/"
+  },
+  "connectors": [
+    {
+      "number": 1,
+      "id": "perfetto",
+      "name": "Perfetto",
+      "version": "0.3.0",
+      "contract": "v57",
+      "manifest": "connectors/perfetto-v57.2.json"
+    }
+  ]
+}

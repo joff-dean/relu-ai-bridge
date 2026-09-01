@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RELU AI Bridge</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div>
+      <strong>RELU AI Bridge</strong>
+      <small>사내용 로컬 브리지</small>
+    </div>
+    <span id="status" class="status">확인 중</span>
+  </header>
+
+  <section>
+    <label>로컬 서버 URL<input id="baseUrl" spellcheck="false"></label>
+    <label>페어링 토큰<input id="token" type="password" autocomplete="off" spellcheck="false"><small class="muted">브라우저 세션에만 보관되며 재시작 후 다시 입력합니다.</small></label>
+    <label class="inline"><input id="enabled" type="checkbox"> 이 브라우저에서 활성화</label>
+    <div class="actions">
+      <button id="save">저장 및 연결 확인</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>현재 대화</h2>
+    <div id="context" class="muted">ChatGPT 대화를 찾는 중…</div>
+    <label>지속 목표<textarea id="goal" rows="3" placeholder="예: 모든 테스트가 통과할 때까지 구현을 완료한다"></textarea></label>
+    <div class="actions">
+      <button id="saveGoal">목표 저장</button>
+      <button id="startGoal">목표 저장 및 시작</button>
+      <button id="compact" class="secondary">Compact &amp; Resume</button>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-title"><h2>권한 승인</h2><button id="refresh" class="text-button">새로고침</button></div>
+    <p class="muted">한 번, 현재 세션, 항상 허용을 선택할 수 있습니다. 항상 허용은 아래에서 철회할 때까지 유지됩니다.</p>
+    <div id="pending"></div>
+    <h3>저장된 권한</h3>
+    <div id="grants"></div>
+  </section>
+  <div id="toast" role="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

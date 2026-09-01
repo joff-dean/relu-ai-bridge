@@ -1,0 +1,29 @@
+# RELU AI Bridge engineering contract
+
+This repository is an independent implementation. Do not copy, vendor, download, dynamically load, or execute code from Chat On Steroids or another agent project. RELU core is generic and Perfetto is Connector #1. The only supported Perfetto baseline is the official `google/perfetto` `v57.2` tag resolved to `da1d152cff27890903d158fe96751de3aab883cc`; never replace it with an unverified moving branch.
+
+## Non-negotiable security invariants
+
+- Keep the MCP service loopback-only by default.
+- Accept Perfetto WebSocket connections only from exact configured HTTP(S) origins and authenticate the first application message.
+- Never place bearer tokens, tunnel keys, API keys, credentials, transcripts, local configs, or audit data in Git.
+- Preserve canonical path containment, direct-symlink rejection, protected paths, size limits, and atomic edit transactions.
+- Command execution must use argument arrays with `shell: false`. Arbitrary commands remain disabled by default.
+- Mutating operations must pass the local approval store. Persistent grants stay scope-limited and locally revocable.
+- Do not add telemetry, remote code loading, wildcard extension hosts, or runtime package dependencies without explicit security review.
+- Browser content is untrusted input. It cannot approve permissions or expand local capabilities.
+- Keep service connector credentials separate from MCP/admin control credentials and from Data Plane API credentials.
+- The server registry, never a browser advertisement or model argument, owns capability schemas, effects, origins, endpoints, timeouts, and concurrency.
+- Never add arbitrary URL/method/header/script/selector/command proxy capabilities.
+- Treat trace metadata, selections, SQL cells, WebSocket messages, imported bundles, and company integration repositories as untrusted input.
+- Keep public/external code free of company paths, hostnames, trace data, commit metadata, product names, and company-only adapters.
+- Preserve SQL byte/row limits, single-read-statement enforcement, WebSocket message limits, request timeouts, alignment operation limits, and integer-string timestamps.
+- Tool arguments are not audited by default because they may contain source code or stdin secrets.
+
+## Required verification
+
+Run syntax checks for `src`, `bin`, `scripts`, extension, and alignment JavaScript, then run the complete Node test suite. Overlay into an exact v57.2 checkout and run the Perfetto UI TypeScript/unit/build checks for plugin or adapter changes. Add regression tests for security-boundary changes.
+
+## Documentation
+
+Update `README.md`, `docs/SECURITY.md`, `docs/TOOLS.md`, and the Korean internal sync guide whenever a network destination, tool, permission scope, protected-path behavior, compatibility baseline, release artifact, or stored-data category changes.

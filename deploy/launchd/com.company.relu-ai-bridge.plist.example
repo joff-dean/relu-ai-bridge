@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.company.relu-ai-bridge</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/absolute/path/to/relu-ai-bridge-wrapper</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>RELU_AI_BRIDGE_CONFIG</key>
+    <string>/absolute/path/to/config/local.json</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/relu-ai-bridge.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/relu-ai-bridge.stderr.log</string>
+</dict>
+</plist>

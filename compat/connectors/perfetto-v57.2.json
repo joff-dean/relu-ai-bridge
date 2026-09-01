@@ -1,0 +1,42 @@
+{
+  "$schema": "../connector-compatibility.schema.json",
+  "schema_version": 1,
+  "connector": {
+    "number": 1,
+    "id": "perfetto",
+    "name": "Perfetto",
+    "version": "0.3.0",
+    "adapter_contract": "v57",
+    "compatible_relu_core_versions": ["0.3.0"]
+  },
+  "public_baseline": {
+    "repository": "https://github.com/google/perfetto.git",
+    "release": "v57.2",
+    "tag_ref": "refs/tags/v57.2",
+    "tag_object_sha": "24bdfb9dfa2dc92883761426dd94259756fa197e",
+    "commit_sha": "da1d152cff27890903d158fe96751de3aab883cc",
+    "short_commit": "da1d152"
+  },
+  "integration": {
+    "plugin_id": "io.company.RELUPerfettoBridge",
+    "source_plugin_path": "plugin/io.company.RELUPerfettoBridge",
+    "source_adapter_path": "perfetto_adapter",
+    "target_plugin_path": "ui/src/plugins/io.company.RELUPerfettoBridge",
+    "target_adapter_path": "ui/src/perfetto_adapter",
+    "default_plugins_file": "ui/src/core/embedder/default_plugins.ts",
+    "enable_patch": "integration/patches/perfetto-v57.2-enable-default-plugin.patch"
+  },
+  "company_integration_policy": {
+    "metadata_scope": "company-internal-only",
+    "exact_head_required": true,
+    "company_adapter_must_be_external": true,
+    "external_release_metadata_allowed": false
+  },
+  "security_policy": {
+    "company_source_allowed_in_external_repository": false,
+    "company_trace_allowed_in_external_repository": false,
+    "credential_allowed_in_release_bundle": false,
+    "telemetry_allowed": false,
+    "runtime_remote_code_loading_allowed": false
+  }
+}

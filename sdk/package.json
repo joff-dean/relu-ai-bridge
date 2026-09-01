@@ -1,0 +1,12 @@
+{
+  "name": "@company/relu-ai-connector",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./relu-web-connector.d.ts",
+      "default": "./relu-web-connector.js"
+    }
+  }
+}

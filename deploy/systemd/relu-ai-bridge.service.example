@@ -1,0 +1,19 @@
+[Unit]
+Description=RELU AI Bridge private MCP and web-service context bridge
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node /opt/relu-ai-bridge/bin/relu-ai-bridge.mjs serve
+Environment=RELU_AI_BRIDGE_CONFIG=%h/.config/relu-ai-bridge/config.json
+EnvironmentFile=%h/.config/relu-ai-bridge/secret.env
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.relu-ai-bridge /absolute/path/to/approved/project
+
+[Install]
+WantedBy=default.target

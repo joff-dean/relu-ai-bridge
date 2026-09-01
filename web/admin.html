@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RELU AI Bridge 관리</title>
+  <link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">LOOPBACK CONTROL PLANE</p>
+        <h1>RELU AI Bridge</h1>
+        <p>사내 웹서비스 Context, Perfetto REF/DUT와 로컬 권한을 관리합니다.</p>
+      </div>
+      <span id="connection" class="badge">확인 중</span>
+    </header>
+
+    <section class="token-panel">
+      <label for="token">로컬 페어링 토큰</label>
+      <div class="row">
+        <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="init에서 발급된 토큰">
+        <button id="connect">현재 탭에 연결</button>
+      </div>
+      <p>토큰은 이 탭의 sessionStorage에만 저장되며 서버 로그나 URL로 전송되지 않습니다.</p>
+    </section>
+
+    <section>
+      <div class="section-title">
+        <h2>웹서비스 Context 세션</h2>
+        <button class="secondary" data-refresh>새로고침</button>
+      </div>
+      <p class="help">Context 내용은 이 목록에 노출하지 않으며, MCP에서 읽기 전 로컬 승인이 필요합니다.</p>
+      <div id="connector-sessions" class="cards empty">연결된 웹서비스가 없습니다.</div>
+    </section>
+
+    <section>
+      <div class="section-title">
+        <h2>Perfetto 클라이언트</h2>
+        <button class="secondary" data-refresh>새로고침</button>
+      </div>
+      <div id="clients" class="cards empty">연결된 클라이언트가 없습니다.</div>
+    </section>
+
+    <section>
+      <div class="section-title"><h2>REF/DUT 세션</h2></div>
+      <form id="create-session" class="row">
+        <input id="session-name" maxlength="200" placeholder="예: camera regression 42">
+        <button>세션 생성</button>
+      </form>
+      <div id="sessions" class="cards empty">생성된 세션이 없습니다.</div>
+    </section>
+
+    <section>
+      <div class="section-title"><h2>승인 요청</h2></div>
+      <p class="help">항상 허용은 표시된 scope에만 적용되며 언제든 아래에서 철회할 수 있습니다.</p>
+      <div id="approvals" class="cards empty">대기 중인 승인이 없습니다.</div>
+    </section>
+
+    <section>
+      <div class="section-title"><h2>변경 작업 원장</h2></div>
+      <p class="help">타임아웃으로 결과를 알 수 없는 변경은 자동 재시도하지 않습니다. 실제 서비스 상태를 확인한 뒤에만 판정하세요.</p>
+      <div id="operations" class="cards empty">기록된 변경 작업이 없습니다.</div>
+    </section>
+
+    <section>
+      <div class="section-title"><h2>저장된 권한</h2></div>
+      <div id="grants" class="cards empty">저장된 권한이 없습니다.</div>
+    </section>
+
+    <output id="notice" aria-live="polite"></output>
+  </main>
+  <script type="module" src="/admin/admin.js"></script>
+</body>
+</html>

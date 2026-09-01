@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "relu-ai-bridge": {
+      "type": "http",
+      "url": "${RELU_AI_BRIDGE_MCP_URL:-http://127.0.0.1:5746/mcp}",
+      "headers": {
+        "Authorization": "Bearer ${RELU_AI_BRIDGE_TOKEN}"
+      }
+    }
+  }
+}
