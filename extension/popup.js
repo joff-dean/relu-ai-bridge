@@ -1,5 +1,5 @@
 const elements = Object.fromEntries([
-  'baseUrl', 'token', 'enabled', 'save', 'status', 'context', 'goal', 'saveGoal', 'startGoal', 'compact', 'refresh', 'pending', 'grants', 'toast',
+  'baseUrl', 'token', 'enabled', 'save', 'status', 'context', 'goal', 'saveGoal', 'startGoal', 'compact', 'refresh', 'approvalPolicy', 'pending', 'grants', 'toast',
 ].map((id) => [id, document.getElementById(id)]));
 
 function request(message) {
@@ -57,6 +57,10 @@ function actionButton(label, handler, className = '') {
 
 async function loadApprovals() {
   const data = await api('/bridge/approvals');
+  const trusted = data.policy === 'trusted_always';
+  elements.approvalPolicy.textContent = trusted
+    ? '사내 신뢰 기본값: 항상 허용 가능한 호출은 별도 승인이나 개별 grant 없이 실행됩니다. once 전용 안전 확인은 유지됩니다.'
+    : '수동 정책: 한 번, 현재 세션, 항상 허용 또는 거부를 선택합니다.';
   elements.pending.replaceChildren();
   if (!data.pending.length) {
     const empty = document.createElement('div');
@@ -95,7 +99,7 @@ async function loadApprovals() {
   if (!grants.length) {
     const empty = document.createElement('div');
     empty.className = 'empty';
-    empty.textContent = '저장된 권한 없음';
+    empty.textContent = trusted ? '정책 기반 자동 허용 · 개별 철회 대상 없음' : '저장된 권한 없음';
     elements.grants.appendChild(empty);
   }
   for (const item of grants) {

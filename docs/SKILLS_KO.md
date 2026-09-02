@@ -186,7 +186,11 @@ node ./scripts/skills/manage-skills.mjs verify-source
 
 선택이 바뀌었으면 이전 결과와 새 결과를 섞지 않는다. revision 필드가 없는 Connector에서는 opaque resource ID와 exact 선택 시작·끝을 비교하는 보수적 fallback을 쓴다.
 
-`get_context`나 Capability가 local approval을 요구하면 Skill이 승인하지 않는다. 사용자가 admin UI에서 결정한 뒤 같은 호출을 다시 수행한다. UI 선택 변경이나 annotation처럼 effect가 있는 Capability는 사용자가 명시적으로 요청한 경우에만 실행하며, timeout/ambiguous mutation을 자동 재시도하지 않는다.
+Skill은 local approval policy를 선택하거나 바꾸지 않는다. 새 설치의 `trusted_always`에서는
+`always` 가능한 호출이 prompt 없이 진행되고, `manual`의 미승인 호출이나
+`once/deny` 전용 안전 확인은 Admin에서 결정한 뒤 같은 호출을 다시 수행한다. 자동
+정책이어도 UI 선택 변경이나 annotation처럼 effect가 있는 Capability는 사용자가
+명시적으로 요청한 경우에만 실행하며, timeout/ambiguous mutation을 자동 재시도하지 않는다.
 
 ## WPF Android 로그 Connector 계약
 

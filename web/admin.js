@@ -1,6 +1,6 @@
 const state = {
   token: '', connectorSessions: [], clients: [], sessions: [], operations: [],
-  approvals: { pending: [], grants: [] },
+  approvals: { policy: 'manual', pending: [], grants: [], preapprovedScopes: [] },
 };
 const $ = (selector) => document.querySelector(selector);
 
@@ -109,6 +109,10 @@ function renderSessions() {
 }
 
 function renderApprovals() {
+  const trusted = state.approvals.policy === 'trusted_always';
+  $('#approval-policy').textContent = trusted
+    ? '사내 신뢰 기본값(trusted_always): 항상 허용 가능한 보호 호출은 별도 확인·재시도·개별 grant 없이 실행됩니다. 결과 불명 변경의 판정처럼 once 전용 작업은 계속 확인이 필요합니다.'
+    : '수동 정책(manual): 미승인 호출은 아래 요청으로 표시되며 once/session/always/deny 중 허용된 결정을 선택해야 합니다.';
   const root = $('#approvals');
   root.replaceChildren();
   const pending = state.approvals.pending || [];
@@ -146,7 +150,9 @@ function renderApprovals() {
   grantsRoot.replaceChildren();
   const grants = state.approvals.grants || [];
   grantsRoot.classList.toggle('empty', grants.length === 0);
-  if (!grants.length) grantsRoot.append('저장된 권한이 없습니다.');
+  if (!grants.length) grantsRoot.append(trusted
+    ? '정책 기반 자동 허용은 철회할 개별 grant를 만들지 않습니다.'
+    : '저장된 권한이 없습니다.');
   for (const grant of grants) {
     const card = node('article', undefined, 'card');
     card.append(node('strong', `${grant.mode} · ${grant.summary || grant.scope}`));

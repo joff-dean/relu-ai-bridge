@@ -42,11 +42,13 @@ test('HTTP MCP lifecycle, persistent approval, and command profile work end to e
 
   const health = await (await fetch(`${baseUrl}/health`)).json();
   assert.equal(health.name, 'relu-ai-bridge');
-  assert.equal(health.version, '0.4.0');
+  assert.equal(health.version, '0.5.0');
+  assert.equal(health.approvalPolicy, 'manual');
 
   const initialized = await rpc(baseUrl, env.config.server.token, { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
   assert.equal(initialized.body.result.serverInfo.name, 'relu-ai-bridge');
   assert.equal(initialized.body.result.serverInfo.version, health.version);
+  assert.match(initialized.body.result.instructions, /locally revocable once\/session\/always approval/u);
   const sessionId = initialized.response.headers.get('mcp-session-id');
   assert.ok(sessionId);
 
@@ -80,6 +82,32 @@ test('HTTP MCP lifecycle, persistent approval, and command profile work end to e
     jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'run_command', arguments: { rootId: 'project', profile: 'echo' } },
   }, sessionId);
   assert.equal(commandResult.body.result.structuredContent.stdout, 'ok');
+});
+
+test('trusted_always does not enable disabled file writes or commands', async (t) => {
+  const env = await fixture({
+    approvals: { policy: 'trusted_always' },
+    permissions: { write: false, commands: false },
+  });
+  const app = await createApplication({ config: env.config });
+  t.after(async () => { await app.close(); await env.cleanup(); });
+  await fs.writeFile(path.join(env.root, 'protected-by-permission.txt'), 'before\n');
+
+  const edit = await app.context.mcp.callTool('apply_edits', {
+    rootId: 'project',
+    edits: [{ path: 'protected-by-permission.txt', oldText: 'before', newText: 'after' }],
+  }, { mcpSessionId: 'mcp_trusted_permissions' });
+  assert.equal(edit.isError, true);
+  assert.match(edit.structuredContent.message, /Writes are disabled/u);
+  assert.equal(await fs.readFile(path.join(env.root, 'protected-by-permission.txt'), 'utf8'), 'before\n');
+
+  const command = await app.context.mcp.callTool('run_command', {
+    rootId: 'project', profile: 'echo',
+  }, { mcpSessionId: 'mcp_trusted_permissions' });
+  assert.equal(command.isError, true);
+  assert.match(command.structuredContent.message, /Command execution is disabled/u);
+  assert.deepEqual(app.context.approvals.list().pending, []);
+  assert.deepEqual(app.context.approvals.list().grants, []);
 });
 
 test('secret-path MCP authentication works without weakening browser bridge auth', async (t) => {

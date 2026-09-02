@@ -119,7 +119,7 @@ export function createToolDefinitions(config) {
       status: { type: 'string', enum: ['complete', 'failed'] },
       clientId: string('Optional browser client id.'),
     }, ['action']), { readOnlyHint: false, openWorldHint: true }),
-    tool('approval_status', 'List pending local approval requests and active grants. Approval decisions must be made in the local extension UI.', objectSchema(), { readOnlyHint: true }),
+    tool('approval_status', 'Show the active local approval policy, exceptional pending requests, and active manual grants.', objectSchema(), { readOnlyHint: true }),
   ];
   return definitions;
 }
@@ -170,13 +170,16 @@ export class McpService {
     }
     const sessionId = randomId('mcp_');
     this.sessions.set(sessionId, { createdAt: Date.now(), lastSeenAt: Date.now() });
+    const approvalInstruction = this.context.config.approvals.policy === 'trusted_always'
+      ? 'The trusted local policy automatically permits always-eligible protected calls without creating grants. Once-only safety interlocks still require a local decision.'
+      : 'Protected calls can require a locally revocable once/session/always approval.';
     return {
       sessionId,
       result: {
         protocolVersion: '2025-06-18',
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: 'relu-ai-bridge', version: '0.4.0' },
-        instructions: 'Start with list_sessions, then get_context and list_capabilities. Use execute only with a listed server-authoritative capability. Perfetto is Connector #1 and retains dedicated bounded SQL and REF/DUT tools. Reads and mutations can require a locally revocable once/session/always approval. Never request secrets, arbitrary URLs, methods, headers, scripts, selectors, commands, or approval bypasses.',
+        serverInfo: { name: 'relu-ai-bridge', version: '0.5.0' },
+        instructions: `Start with list_sessions, then get_context and list_capabilities. Use execute only with a listed server-authoritative capability. Perfetto is Connector #1 and retains dedicated bounded SQL and REF/DUT tools. ${approvalInstruction} Never request secrets, arbitrary URLs, methods, headers, scripts, selectors, commands, or approval bypasses.`,
       },
     };
   }

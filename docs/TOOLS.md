@@ -4,12 +4,18 @@
 
 Claude/Codex는 서비스 종류를 가정하기 전에 이 네 도구로 discovery한다.
 
-| Tool | 용도 | 민감 데이터 | 승인 |
+| Tool | 용도 | 민감 데이터 | 로컬 정책 |
 | --- | --- | --- | --- |
 | `list_sessions` | 연결된 서비스와 opaque session 조회 | Context 원문 없음 | 없음 |
-| `get_context` | 현재 화면의 구조화 Context 조회 | payload/document/selection 가능 | context scope |
+| `get_context` | 현재 화면의 구조화 Context 조회 | payload/document/selection 가능 | context scope 검사 |
 | `list_capabilities` | 서버가 허용한 action/schema/effect 조회 | 데이터 원문 없음 | 없음 |
-| `execute` | 한 Capability 실행 | parameter/result 가능 | capability scope |
+| `execute` | 한 Capability 실행 | parameter/result 가능 | capability scope 검사 |
+
+새 `init` 설정은 `approvals.policy:"trusted_always"`다. `always` 결정을 허용하는
+일반 보호 호출은 같은 호출에서 즉시 실행되고 pending/grant를 만들지 않는다.
+`manual` 설정에서는 미승인 호출이 `APPROVAL_REQUIRED`를 반환하며 Admin에서 결정한
+뒤 같은 호출을 다시 실행한다. 결과 불명 mutation 판정처럼 `once/deny`만 허용한
+안전 확인은 `trusted_always`에서도 자동 통과하지 않는다.
 
 ### `list_sessions`
 
@@ -30,7 +36,9 @@ Claude/Codex는 서비스 종류를 가정하기 전에 이 네 도구로 discov
 }
 ```
 
-첫 호출은 `APPROVAL_REQUIRED`다. 승인을 결정하고 같은 호출을 다시 실행한다. Generic Context는 service `contextSchema`를 통과한 값이고, Perfetto Context는 trace info와 현재 area selection이다.
+`trusted_always`에서는 별도 승인 창 없이 현재 policy scope를 검사하고 반환한다.
+`manual`에서는 첫 미승인 호출이 `APPROVAL_REQUIRED`다. Generic Context는 service
+`contextSchema`를 통과한 값이고, Perfetto Context는 trace info와 현재 area selection이다.
 
 ### `list_capabilities`
 
@@ -101,7 +109,7 @@ operation ledger 판정 절차를 따른다.
 승인·변경 원장의 connector peer는 browser의 server-observed exact Origin 또는 allowlist의
 desktop app ID에서 도출한 `relu-desktop://<sha256>` opaque trust-domain key다. 별도
 page/application-instance binding이 실제 탭이나 desktop instance를 묶는다.
-변경 operation은 policyEpoch+service+connector peer+resource+capability+operationId 원장에서 deduplicate된다. Timeout/실패처럼 결과가 모호하면 같은 resource의 후속 변경도 차단한다. `/admin/`의 변경 작업 원장에서 실제 상태 확인과 별도 local approval을 거쳐야 해제할 수 있으며, reconnect나 새 탭으로 우회할 수 없다.
+변경 operation은 policyEpoch+service+connector peer+resource+capability+operationId 원장에서 deduplicate된다. Timeout/실패처럼 결과가 모호하면 같은 resource의 후속 변경도 차단한다. `/admin/`의 변경 작업 원장에서 실제 상태를 확인하고 `once/deny` 전용 local approval을 거쳐야 해제할 수 있으며, `trusted_always`, reconnect나 새 탭으로 우회할 수 없다.
 
 ### Operation ledger 유지보수
 
@@ -207,7 +215,7 @@ Bigint cell:
 
 ## Optional local coding/agent 도구
 
-| Tool | 용도 | 승인 scope |
+| Tool | 용도 | 정책 scope |
 | --- | --- | --- |
 | `workspace_roots` | 승인 root 조회 | 없음 |
 | `list_files` | bounded 파일 열거 | 없음 |
@@ -219,7 +227,7 @@ Bigint cell:
 | `write_stdin` | interactive process 입력/종료 | command session |
 | `session` | 기록, goal, compact/resume | session/action |
 | `agents` | optional ChatGPT prime/worker | prime + action + immutable worker lifecycle/snapshot |
-| `approval_status` | pending/grant 조회 | 없음 |
+| `approval_status` | active policy와 예외 pending/manual grant 조회 | 없음 |
 
 File 도구는 root containment와 symlink 경계를 강제한다. `protectedPaths`에 해당하는 항목은 목록·검색·읽기·diff에서 숨기거나 거부하며, edit는 protected path·byte limit과 모든 변경의 preflight를 통과한 뒤 원자적으로 적용한다. Command는 `shell:false` argument array이며 arbitrary executable은 기본 비활성이다. Named profile의 extra args와 interactive stdin은 config 작성자가 각각 명시적으로 허용한 경우에만 열리며 MCP caller가 그 값을 확대할 수 없다.
 
@@ -239,6 +247,9 @@ Multi-file edit는 bridge 내부 요청끼리 직렬화하고 각 파일을 comm
 
 ## 승인 오류
 
+아래 응답은 `manual`의 미승인 호출 또는 `trusted_always`에서도 자동화하지 않는
+`once/deny` 전용 안전 확인에서 반환된다.
+
 ```json
 {
   "error": "APPROVAL_REQUIRED",
@@ -249,4 +260,8 @@ Multi-file edit는 bridge 내부 요청끼리 직렬화하고 각 파일을 comm
 }
 ```
 
-`/admin/`에서 `한 번`, `현재 세션`, `항상 허용`, `거부` 중 하나를 선택한 뒤 원래 호출을 재실행한다. `once`는 argument digest가 바뀌면 재사용되지 않고 소비 즉시 제거된다. `session` grant도 해당 MCP session 종료/만료 또는 Bridge 재시작 때 제거된다. 저장 grant는 언제든 철회할 수 있다.
+`/admin/`에서 요청이 허용하는 `한 번`, `현재 세션`, `항상 허용`, `거부` 중 하나를
+선택한 뒤 원래 호출을 재실행한다. `once`는 argument digest가 바뀌면 재사용되지 않고
+소비 즉시 제거된다. `session` grant도 해당 MCP session 종료/만료 또는 Bridge 재시작
+때 제거된다. `trusted_always`의 구성 기반 허용은 개별 grant가 아니어서 이 목록에서
+철회하지 않으며, `manual`로 정책을 바꾸고 Bridge를 재시작하면 비활성화된다.

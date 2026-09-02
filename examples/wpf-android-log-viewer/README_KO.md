@@ -50,7 +50,11 @@ await viewModel.OnChartSelectionCompletedAsync(
 
 ## 승인과 selection 안전성
 
-service 설정의 승인 resource binding은 `logResourceId + datasetRevision`이다. 사용자가 이 immutable dataset에 `항상 허용`을 선택하면 같은 dataset의 다른 구간을 분석할 때 승인을 반복하지 않는다. 로그 파일이 바뀌거나 dataset revision이 바뀌면 기존 승인이 재사용되지 않는다.
+service 설정의 approval resource binding은 `logResourceId + datasetRevision`이다. 새 설치의
+`trusted_always`에서는 같은 dataset의 다른 구간을 분석할 때 개별 승인이나 grant가
+생기지 않는다. `manual`에서 `항상 허용`을 선택한 경우에도 같은 경계 안에서 재사용한다.
+로그 파일 또는 dataset revision이 바뀌면 새 scope가 되며 두 정책 모두 identity와 guard를
+다시 검사한다.
 
 실행 직전 guard는 다음 다섯 필드를 모두 비교한다.
 

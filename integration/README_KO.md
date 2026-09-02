@@ -4,7 +4,7 @@ Perfetto UI 플러그인은 현재 소스 트리 내부에서 빌드해야 한�
 RELU AI Bridge의 Connector #1 소스를 Perfetto checkout에 복사하거나 연결하고, 플러그인을 기본
 활성화하는 최소 패치만 소유한다.
 
-- RELU core / Perfetto connector release: `0.4.0`
+- RELU core / Perfetto connector release: `0.5.0`
 - adapter contract: `v57`
 
 - 공개 기준선: Perfetto `v57.2`, commit

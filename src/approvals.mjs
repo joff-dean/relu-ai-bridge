@@ -3,6 +3,13 @@ import path from 'node:path';
 import { AsyncMutex, randomId, readJson, writeJsonAtomic } from './utils.mjs';
 
 const APPROVAL_DECISIONS = Object.freeze(['once', 'session', 'always', 'deny']);
+const APPROVAL_POLICIES = Object.freeze(['trusted_always', 'manual']);
+
+function configuredPolicy(config) {
+  const policy = config?.approvals?.policy;
+  if (!APPROVAL_POLICIES.includes(policy)) throw new Error('Approval policy is invalid');
+  return policy;
+}
 
 function allowedDecisions(value = APPROVAL_DECISIONS) {
   if (!Array.isArray(value) || value.length === 0 || value.length > APPROVAL_DECISIONS.length) {
@@ -47,23 +54,33 @@ function fingerprint(value) {
 export class ApprovalStore {
   constructor(config) {
     this.config = config;
+    this.policy = configuredPolicy(config);
     this.file = path.join(config.dataDir, 'approvals.json');
-    this.state = { grants: [], pending: [] };
+    this.state = { policy: this.policy, grants: [], pending: [] };
     this.mutex = new AsyncMutex();
   }
 
   async initialize() {
     return this.mutex.runExclusive(async () => {
       const loaded = await readJson(this.file, this.state);
+      // 0.4.x state had no policy field and therefore represents manual mode.
+      // A policy transition invalidates old decisions so switching back cannot
+      // silently reactivate a grant from a different authorization regime.
+      const loadedPolicy = loaded && typeof loaded === 'object'
+        && Object.prototype.hasOwnProperty.call(loaded, 'policy')
+        ? loaded.policy
+        : 'manual';
+      const samePolicy = loadedPolicy === this.policy;
       const draft = {
+        policy: this.policy,
         // A process restart ends every MCP session.  Session grants therefore
         // cannot be carried into the new process, and consumed one-shot grants
         // have no further security or audit value in this live authorization
         // database.
-        grants: Array.isArray(loaded?.grants)
+        grants: samePolicy && this.policy === 'manual' && Array.isArray(loaded?.grants)
           ? loaded.grants.filter((grant) => grant?.mode === 'always')
           : [],
-        pending: Array.isArray(loaded?.pending)
+        pending: samePolicy && Array.isArray(loaded?.pending)
           ? loaded.pending.filter((item) => item?.status === 'pending' && !this.isExpired(item))
           : [],
       };
@@ -108,8 +125,13 @@ export class ApprovalStore {
 
   async requireUnlocked(input) {
     await this.pruneExpiredUnlocked();
-    if (!this.config.approvals.enforceMutatingToolGrants) return { approvedBy: 'configuration' };
     const decisions = allowedDecisions(input.allowedDecisions);
+    // trusted_always is the configuration-level equivalent of the existing
+    // `always` choice. Requests intentionally restricted to once/deny retain
+    // their human safety interlock (for example ambiguous mutation recovery).
+    if (this.policy === 'trusted_always' && decisions.includes('always')) {
+      return { approvedBy: 'trusted_always' };
+    }
     if (decisions.includes('always') && this.hasAlways(input.scope)) return { approvedBy: 'always' };
     const requestFingerprint = fingerprint({
       scope: input.scope,
@@ -151,6 +173,7 @@ export class ApprovalStore {
 
   list() {
     return structuredClone({
+      policy: this.policy,
       pending: this.state.pending.filter((item) => item.status === 'pending'),
       grants: this.state.grants.filter((item) => item.mode !== 'once' || !item.consumedAt),
       preapprovedScopes: this.config.approvals.preapprovedScopes,

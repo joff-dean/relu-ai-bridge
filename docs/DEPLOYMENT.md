@@ -31,10 +31,10 @@ RELU는 사용자 PC의 low-privilege account로 실행한다. 중앙 공용 REL
 
 ## 설정 소유권
 
-- Platform/security: base config, service Origin/token audience, Capability/effect/schema, egress endpoint, OS sandbox
+- Platform/security: base config, `approvals.policy`, service Origin/token audience, Capability/effect/schema, egress endpoint, OS sandbox
 - Service owner: bounded handler/API, output schema, service/API secret, rollout/rollback
 - Perfetto owner: v57 adapter, feature SQL, alignment acceptance
-- End user: once/session/always grant와 revoke
+- End user: `manual`을 사용하는 경우 once/session/always grant와 revoke
 - AI governance: Claude/workspace와 데이터 등급 허용 범위
 
 Git 금지 항목: `config/local.json`, 모든 token/API credential, audit/dataDir, 실제 Context/result/trace와 internal hostname이 포함된 integration manifest.
@@ -124,7 +124,7 @@ dotnet build C:\Company\relu-ai-bridge\examples\wpf-android-log-viewer\WpfAndroi
   -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
 dotnet pack C:\Company\relu-ai-bridge\sdk-dotnet\src\Relu.AI.Bridge.DesktopConnector\Relu.AI.Bridge.DesktopConnector.csproj -c Release --no-build --output C:\Company\release-out\nuget `
   -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false `
-  -p:Version=0.4.0 -p:PackageVersion=0.4.0
+  -p:Version=0.5.0 -p:PackageVersion=0.5.0
 powershell.exe -NoProfile -File C:\Company\relu-ai-bridge\scripts\skills\install-skills.ps1 `
   -Scope project -Target both -ProjectPath C:\Work\AndroidAnalysis
 powershell.exe -NoProfile -File C:\Company\relu-ai-bridge\scripts\skills\verify-skills.ps1 `
@@ -145,12 +145,13 @@ Skill 공급 경계는 [Desktop Connector 설계](DESKTOP_CONNECTOR_KO.md)와
 2. Service 전용 connector token을 생성한다.
 3. Read-only Capability만 활성화한다.
 4. Synthetic data와 `node --test test/connectors.test.mjs` 패턴으로 token/Origin 또는 app identity/schema/timeout을 검증한다.
-5. 소수 사용자 canary에서 `/admin/`의 session/approval 흐름을 확인한다.
+5. 소수 사용자 canary에서 `/admin/`의 session과 active approval policy 표시를 확인한다.
 6. Context/result가 audit/dataDir에 저장되지 않는지 marker scan한다.
 7. 필요할 때 좁은 UI mutation을 `operationId`와 함께 추가한다.
 8. Data/external mutation은 별도 보안 review 뒤에만 활성화한다.
 
-Registry의 schema/effect hash가 바뀐 Capability는 자체적으로 재승인이 필요하다.
+Registry의 schema/effect hash가 바뀐 Capability는 새 scope가 된다. `manual`에서는
+재승인이 필요하고 `trusted_always`에서도 새 schema/effect와 Context guard를 다시 검사한다.
 모든 Connector grant와 mutation ID namespace를 함께 교체해야 하는 검토된 정책 변경만
 `connectors.policyEpoch`를 증가시킨다.
 
@@ -242,19 +243,22 @@ scripts/perfetto/build-test.sh --all-tests /absolute/work/perfetto-v57.2
 5. Control/Perfetto/browser/desktop service token cross-audience 401/WS 거부 확인
 6. Registry input/output schema, execution guard와 effect/policyEpoch diff review
 7. Service별 bounded load/timeout/cancellation test
-8. once/session/always/deny/revoke와 browser reload/desktop restart isolation test
+8. 기본 `trusted_always`의 무프롬프트 실행·grant 미생성, `manual`의
+   once/session/always/deny/revoke와 browser reload/desktop restart isolation test
 9. Exact Perfetto v57.2 overlay unit/type/build test
-10. Internal manifest에 core/connector/company target full SHA 기록
+10. Internal manifest에 core/connector/company target full SHA, approval policy와 config digest 기록
 11. Read-only canary 후 production 확대
 
 ## Rollback
 
 - Core: 직전 검증된 RELU tag artifact로 되돌리고 process 재시작
+- Approval policy: artifact와 함께 검증된 정책으로 되돌린다. 0.4.x 동작을 유지하려면
+  `manual`을 명시하며, 정책 전환으로 무효화된 이전 grant가 복구된다고 가정하지 않는다.
 - Connector: service build와 registry entry를 함께 직전 버전으로 복구
-- Credential: 의심 service token/API secret만 즉시 회전; control 침해면 전체 grant도 철회
+- Credential: 의심 service token/API secret만 즉시 회전; control 침해면 수동 grant도 제거하고 trusted policy 장비를 중지
 - Perfetto: 직전 integration manifest의 immutable UI artifact로 복귀
 - Mirror: history rewrite 없이 deprecated/deny metadata로 관리
-- Approval: 문제 grant 철회 또는 검토 후 `approvals.json` 전체 초기화
+- Approval: 수동 정책의 문제 grant 철회 또는 검토 후 `approvals.json` 전체 초기화
 - Policy epoch: 이미 사용한 값보다 낮추지 않는다. Core rollback에도 현재의 더 높은 `connectors.policyEpoch`와 archive를 유지한다.
 
 Rollback 뒤에도 외부 tag, internal mirror commit, company target, registry version과 배포 artifact hash의 관계가 감사 가능해야 한다.

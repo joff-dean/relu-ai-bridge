@@ -5,7 +5,7 @@ Connector #1이다. 이 문서는 외부에서 검증한 RELU core release를 �
 반입하고, Connector #1을 사내 전용 label과 exact SHA로 식별한 회사 Perfetto에
 통합하는 절차다.
 회사 fork와 company-only adapter의 정확한 정보는 외부 release와 분리한다.
-현재 RELU core와 Perfetto connector release version은 각각 `0.4.0`이며,
+현재 RELU core와 Perfetto connector release version은 각각 `0.5.0`이며,
 Perfetto public baseline `v57.2`와 adapter contract `v57`은 독립 호환성 축이다.
 
 ```text
@@ -45,11 +45,27 @@ Perfetto public baseline `v57.2`와 adapter contract `v57`은 독립 호환성 �
 9. company 대상 overlay는 clean RELU release checkout에서 `copy`만 허용한다.
    symlink와 `--allow-dirty-source`는 도구가 거부한다.
 
+### 0.5 승인 정책 마이그레이션
+
+새 `init` 설정은 사내 단일 사용자 장비의 반복 승인 창을 없애기 위해
+`approvals.policy:"trusted_always"`를 명시한다. 0.4.x 설정에서 `policy`와 deprecated
+`enforceMutatingToolGrants`가 모두 없거나 legacy 값이 `true`이면 0.5에서도 `manual`로
+유지해 업데이트 자체가 권한을 확대하지 않는다. legacy 값이 `false`이면 이전의
+무프롬프트 동작을 보존해 `trusted_always`로 해석한다. 기존 장비는 보안 담당자가
+permission, root, command profile, service/Capability registry와 egress를 검토한 뒤
+legacy 키를 제거하고 원하는 `policy`를 명시한다.
+
+정책 전환은 Bridge 재시작 때 적용되며 이전 pending/grant를 무효화한다. 자동
+정책은 개별 grant를 만들지 않지만 `once/deny` 전용 ambiguous-operation 판정은 계속
+운영자 확인을 요구한다. 배포 manifest에는 policy 값과 secret을 제외한 전체 config
+digest를 기록한다. 긴급 차단은 정책을 `manual`로 바꾸는 것만으로 끝내지 말고
+Bridge/Connector 중지, 관련 permission/service 비활성화와 credential 회전을 수행한다.
+
 ## 2. 권장 저장소·계정 분리
 
 ```text
 /opt/import-tools/relu-ai-bridge       # 보안 검토한 import tool, read-only
-/quarantine/relu-ai-bridge-v0.4.0     # inbound release, 실행 금지
+/quarantine/relu-ai-bridge-v0.5.0     # inbound release, 실행 금지
 /srv/git/vendor/relu-ai-bridge.git     # bare immutable mirror
 /srv/git/vendor/perfetto-public.git    # 선택: Google baseline bare mirror
 /work/vendor-relu-ai-bridge            # detached vendor checkout
@@ -87,7 +103,7 @@ trace test ID와 사내 CI 결과를 둔다. 외부 write remote를 등록하지
 ```bash
 cd /opt/import-tools/relu-ai-bridge
 scripts/perfetto/verify-release.sh \
-  /quarantine/relu-ai-bridge-v0.4.0
+  /quarantine/relu-ai-bridge-v0.5.0
 ```
 
 signed tag 정책이면 검역 계정 trust store에 승인 public key만 설치하고
@@ -120,7 +136,7 @@ git init --bare /srv/git/vendor/relu-ai-bridge.git
 
 ```bash
 scripts/perfetto/import-release.sh \
-  /quarantine/relu-ai-bridge-v0.4.0 \
+  /quarantine/relu-ai-bridge-v0.5.0 \
   /srv/git/vendor/relu-ai-bridge.git
 ```
 
@@ -134,8 +150,8 @@ scripts/perfetto/import-release.sh \
    `git update-ref --stdin` transaction으로 commit한다.
 
 ```text
-refs/tags/relu-ai-bridge-v0.4.0
-refs/releases/relu-ai-bridge/relu-ai-bridge-v0.4.0
+refs/tags/relu-ai-bridge-v0.5.0
+refs/releases/relu-ai-bridge/relu-ai-bridge-v0.5.0
 ```
 
 기존 tag는 같은 commit을 가리키는지만 보지 않는다. annotated tag type과 raw
@@ -149,8 +165,8 @@ tag object SHA까지 정확히 같아야 idempotent로 인정한다. lightweight
 git -C /srv/git/vendor/relu-ai-bridge.git remote add internal \
   ssh://git.internal.example/vendor/relu-ai-bridge.git
 git -C /srv/git/vendor/relu-ai-bridge.git ls-remote internal \
-  refs/tags/relu-ai-bridge-v0.4.0 \
-  refs/releases/relu-ai-bridge/relu-ai-bridge-v0.4.0
+  refs/tags/relu-ai-bridge-v0.5.0 \
+  refs/releases/relu-ai-bridge/relu-ai-bridge-v0.5.0
 ```
 
 새 release라면 두 ref가 없어야 한다. 서버가 atomic push와 protected tag를
@@ -158,8 +174,8 @@ git -C /srv/git/vendor/relu-ai-bridge.git ls-remote internal \
 
 ```bash
 git -C /srv/git/vendor/relu-ai-bridge.git push --atomic internal \
-  refs/tags/relu-ai-bridge-v0.4.0:refs/tags/relu-ai-bridge-v0.4.0 \
-  refs/releases/relu-ai-bridge/relu-ai-bridge-v0.4.0:refs/releases/relu-ai-bridge/relu-ai-bridge-v0.4.0
+  refs/tags/relu-ai-bridge-v0.5.0:refs/tags/relu-ai-bridge-v0.5.0 \
+  refs/releases/relu-ai-bridge/relu-ai-bridge-v0.5.0:refs/releases/relu-ai-bridge/relu-ai-bridge-v0.5.0
 ```
 
 atomic push가 지원되지 않으면 개별 push로 우회하지 않는다. 문서의 host는
@@ -170,7 +186,7 @@ atomic push가 지원되지 않으면 개별 push로 우회하지 않는다. 문
 ```bash
 git clone /srv/git/vendor/relu-ai-bridge.git /work/vendor-relu-ai-bridge
 git -C /work/vendor-relu-ai-bridge checkout --detach \
-  relu-ai-bridge-v0.4.0
+  relu-ai-bridge-v0.5.0
 git -C /work/vendor-relu-ai-bridge rev-parse HEAD
 git -C /work/vendor-relu-ai-bridge status --short
 ```
@@ -183,7 +199,7 @@ HEAD는 release manifest의 `release.commit`과 같고 status는 비어 있어�
 ### SDK와 Skill 사내 배포
 
 같은 detached release의 `sdk/`를 별도 artifact로 취급한다. 내부 packaging
-저장소에서 회사 scope와 registry metadata를 적용하고 core version과 같은 `0.4.0`
+저장소에서 회사 scope와 registry metadata를 적용하고 core version과 같은 `0.5.0`
 및 artifact digest를 기록한다. 또는 서비스 저장소에 검토한 파일을 vendor하고
 상대 `file:` dependency로 고정한다. 외부 checkout의 `private:true`를 직접 바꾸거나
 그 checkout에서 publish하지 않으며, 외부 Git URL·개발자 절대경로를 사내
@@ -191,7 +207,7 @@ lockfile에 남기지 않는다.
 
 같은 tag의 `sdk-dotnet/`은 .NET 8 Release build와 `compat/desktop-auth-v1.json` 공용
 vector를 통과한 뒤 내부 NuGet package 또는 reviewed source reference로 공급한다.
-Package version은 core와 같은 `0.4.0`으로 고정하고, 외부 NuGet/Git URL에서 runtime에
+Package version은 core와 같은 `0.5.0`으로 고정하고, 외부 NuGet/Git URL에서 runtime에
 최신 SDK를 내려받지 않는다.
 
 Checkout은 상위 `Directory.Build.props/targets`가 없는 승인된 격리 root에 두고,
@@ -207,17 +223,17 @@ dotnet build /work/vendor-relu-ai-bridge/examples/wpf-android-log-viewer/WpfAndr
 dotnet pack /work/vendor-relu-ai-bridge/sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj \
   -c Release --no-build -o /work/release/nuget \
   -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false \
-  -p:Version=0.4.0 -p:PackageVersion=0.4.0
-unzip -l /work/release/nuget/Relu.AI.Bridge.DesktopConnector.0.4.0.nupkg
-unzip -p /work/release/nuget/Relu.AI.Bridge.DesktopConnector.0.4.0.nupkg \
+  -p:Version=0.5.0 -p:PackageVersion=0.5.0
+unzip -l /work/release/nuget/Relu.AI.Bridge.DesktopConnector.0.5.0.nupkg
+unzip -p /work/release/nuget/Relu.AI.Bridge.DesktopConnector.0.5.0.nupkg \
   Relu.AI.Bridge.DesktopConnector.nuspec > /work/release/nuget/Relu.AI.Bridge.DesktopConnector.nuspec
-sha256sum /work/release/nuget/Relu.AI.Bridge.DesktopConnector.0.4.0.nupkg \
-  > /work/release/nuget/Relu.AI.Bridge.DesktopConnector.0.4.0.nupkg.sha256
+sha256sum /work/release/nuget/Relu.AI.Bridge.DesktopConnector.0.5.0.nupkg \
+  > /work/release/nuget/Relu.AI.Bridge.DesktopConnector.0.5.0.nupkg.sha256
 ```
 
 NuGet inventory에는 최소한 `lib/net8.0` DLL·XML 문서, `NUGET_README_KO.md`,
 `LICENSE`만 있는지 확인한다. 추출한 nuspec의 package ID와 version이 각각
-`Relu.AI.Bridge.DesktopConnector`, `0.4.0`이고 dependency group이 비어 있는지도
+`Relu.AI.Bridge.DesktopConnector`, `0.5.0`이고 dependency group이 비어 있는지도
 확인한다. 승인된 내부 NuGet feed에는 이 검증된 `.nupkg`와 SHA-256/provenance 기록을
 함께 보관하고, 같은 버전 파일을 교체하지 않는다.
 
@@ -431,7 +447,11 @@ company HEAD가 일치해야 한다. 교체는 인접 stage와 rename/rollback t
 4. overlay 구조, TypeScript, connector unit test, production build
 5. synthetic REF/DUT 정렬 회귀 테스트
 6. 승인된 실제 trace의 end-to-end 테스트(결과는 사내 artifact storage만 사용)
-7. loopback-only bridge, origin/token, 승인 scope, revocation 보안 테스트
+7. loopback-only bridge, origin/token과 approval policy 보안 테스트:
+   새 init의 `trusted_always` 무프롬프트 실행·grant 미생성, policy 누락 시 legacy 키
+   없음/`true`의 `manual` 유지와 `false`의 `trusted_always` 보존,
+   invalid/conflicting policy fail-closed, `manual` grant/revoke, 정책 전환 시 기존
+   grant 무효화, once-only reconciliation interlock
 8. Desktop endpoint/app identity/stale selection/restart, .NET HMAC vector와 `net8.0-windows` WPF 예제 build
 9. Skill source checksum, Claude/Codex install/verify/uninstall과 prompt-injection 경계
 10. dependency/license 및 build artifact digest 검토
@@ -441,7 +461,7 @@ company HEAD가 일치해야 한다. 교체는 인접 stage와 rename/rollback t
 ```text
 (RELU release commit, company Perfetto commit,
  company adapter commit 또는 not-used, .NET package digest,
- Skill manifest digest, build configuration digest)
+ Skill manifest digest, approval policy, build configuration digest)
 ```
 
 `--install-deps`는 Perfetto 공식 dependency installer를 실행하므로 외부 인터넷이
@@ -450,10 +470,11 @@ company HEAD가 일치해야 한다. 교체는 인접 stage와 rename/rollback t
 ## 11. 배포, 롤백, 재동기화
 
 배포 레코드에는 RELU tag/raw tag/commit, inbound bundle SHA-256, company Perfetto
-SHA, company adapter revision, CI run, build artifact SHA-256, 승인자·시각을 남긴다.
+SHA, company adapter revision, approval policy와 config digest, CI run, build artifact
+SHA-256, 승인자·시각을 남긴다.
 
 롤백은 immutable ref나 integration history를 rewrite하는 작업이 아니다. 이전에
-검증한 네 입력 조합의 artifact로 배포 포인터를 되돌린다. 가능하면 backup을
+검증한 입력 조합과 approval policy의 artifact로 배포 포인터를 되돌린다. 가능하면 backup을
 수동 복사하지 말고 이전 vendor tag와 company integration commit으로 새
 disposable Perfetto worktree를 만들어 재빌드한다.
 

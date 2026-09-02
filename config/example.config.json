@@ -89,7 +89,7 @@
     "allowArbitraryCommands": false
   },
   "approvals": {
-    "enforceMutatingToolGrants": true,
+    "policy": "trusted_always",
     "allowPersistentGrants": true,
     "preapprovedScopes": []
   },

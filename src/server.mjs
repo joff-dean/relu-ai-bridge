@@ -129,9 +129,10 @@ export async function createApplication(options = {}) {
       return sendJson(response, 200, {
         ok: true,
         name: 'relu-ai-bridge',
-        version: '0.4.0',
+        version: '0.5.0',
         auth: config.server.auth,
         mcpAuth: config.server.mcpAuth,
+        approvalPolicy: config.approvals.policy,
         roots: config.roots.length,
         uptimeSeconds: Math.floor(process.uptime()),
         perfettoClients: perfetto.listClients().length,

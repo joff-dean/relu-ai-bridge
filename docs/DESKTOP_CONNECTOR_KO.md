@@ -1,6 +1,6 @@
 # Windows Desktop Connector 및 WPF 통합 설계
 
-RELU AI Bridge 0.4.0은 사람이 실행해 둔 Windows 분석 프로그램을 Claude/Codex의
+RELU AI Bridge 0.5.0은 사람이 실행해 둔 Windows 분석 프로그램을 Claude/Codex의
 로컬 MCP 작업 공간에 연결한다. 화면을 캡처하거나 UI Automation으로 조작하는 방식이
 아니라, 기존 프로그램의 분석 계층이 현재 선택 구간과 제한된 조회 함수를 직접
 제공하는 구조다.
@@ -19,7 +19,7 @@ WPF chart / existing analysis engine
                  ▼
             RELU AI Bridge
   ├─ server-owned schema/effect policy
-  ├─ once / session / always approval
+  ├─ trusted_always 기본 / manual 선택 policy
   ├─ stale-selection execution guard
   └─ list_sessions / get_context /
      list_capabilities / execute
@@ -100,12 +100,13 @@ service 객체를 주 설정 `connectors.services`에 넣는다. 예제의 핵�
 }
 ```
 
-`bindingFields`는 persistent approval의 resource 경계다. 선택마다 바뀌는 값은 넣지
-않아 같은 dataset 안에서 “항상 허용”을 다시 묻지 않게 한다. 반면
+`bindingFields`는 approval policy의 resource 경계다. 선택마다 바뀌는 값은 넣지
+않아 같은 dataset 안에서 승인 창을 반복하지 않게 한다. 반면
 `executionGuardFields`에는 selection identity/revision과 전체 `selection` 객체를 포함해
 승인 대기 또는 실행 도중 ID·revision·start/end 중 하나라도 바뀐 요청을 거부한다.
 새 로그를 열거나 dataset revision이 바뀌면
-resource scope도 바뀌므로 다시 승인한다.
+resource scope도 바뀐다. `manual`이면 다시 승인하고, 새 설치 기본인
+`trusted_always`이면 prompt 없이 새 경계를 검사한 뒤 진행한다.
 
 Browser와 desktop이 모두 필요한 논리 서비스라도 한 token을 두 runtime에 공유할 수
 없다. Registry는 `clientKinds`에 정확히 한 transport만 허용하므로 별도 service ID와
@@ -182,7 +183,8 @@ sampling/parser version, truncation과 dropped-record 정보를 함께 주는 �
 
 나중에 `focus_range`나 annotation 같은 UI mutation을 추가한다면 server registry의
 `effect`를 정확히 표시하고 unique `operationId`, timeout 후 ambiguous 판정 및 local
-approval을 적용해야 한다. Read로 위장해 추가하면 안 된다.
+policy를 적용해야 한다. `trusted_always`도 operation ledger, Context guard와
+`once/deny` 전용 ambiguous 판정 확인을 우회하지 않는다. Read로 위장해 추가하면 안 된다.
 
 ## 인증과 stale-selection 방어
 

@@ -98,7 +98,8 @@ async function main() {
     }
     checks.push(['authentication', config.server.auth, 'token loaded']);
     checks.push(['MCP authentication', config.server.mcpAuth, 'enabled']);
-    checks.push(['persistent approvals', String(config.approvals.allowPersistentGrants), config.approvals.enforceMutatingToolGrants ? 'enforced' : 'not enforced']);
+    checks.push(['approval policy', config.approvals.policy, config.approvals.policy === 'trusted_always' ? 'automatic' : 'interactive']);
+    checks.push(['persistent manual grants', String(config.approvals.allowPersistentGrants), config.approvals.policy === 'manual' ? 'available' : 'inactive']);
     checks.push(['Perfetto WebSocket', config.perfetto.websocketPath, config.perfetto.enabled ? 'enabled' : 'disabled']);
     for (const origin of config.perfetto.allowedOrigins) checks.push(['Perfetto origin', origin, 'allowed']);
     checks.push(['RELU connector WS', config.connectors.websocketPath, config.connectors.enabled ? 'enabled' : 'disabled']);

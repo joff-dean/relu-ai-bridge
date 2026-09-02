@@ -224,7 +224,7 @@ function desktopRegistration(overrides = {}) {
     client: {
       serviceId: 'android-log-viewer', clientKind: 'desktop',
       appId: 'com.relu.AndroidLogViewer', instanceId: 'wpf_instance_one',
-      connectorVersion: '0.4.0', capabilities: ['get_selection_stats', 'focus_range'],
+      connectorVersion: '0.5.0', capabilities: ['get_selection_stats', 'focus_range'],
     },
     context: {
       logResourceId: 'log-001', datasetRevision: 'rev-42',
@@ -1690,6 +1690,9 @@ test('a persisted pending mutation is recovered as ambiguous after a process res
 
 test('HTTP operation reconciliation requires a separate local once approval', async (t) => {
   const env = await fixture();
+  // Even the trusted default cannot bypass a once-only ambiguous-operation
+  // interlock; an operator must still confirm the observed external state.
+  env.config.approvals.policy = 'trusted_always';
   const capability = { ...batteryService().capabilities[1], timeoutMs: 15, maxConcurrent: 1 };
   configure(env, [batteryService({ capabilities: [capability] })]);
   const app = await createApplication({ config: env.config });

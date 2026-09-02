@@ -17,7 +17,7 @@ dotnet run --project .\sdk-dotnet\tests\Relu.AI.Bridge.DesktopConnector.Tests\Re
 dotnet pack .\sdk-dotnet\src\Relu.AI.Bridge.DesktopConnector\Relu.AI.Bridge.DesktopConnector.csproj `
   -c Release --no-build --output C:\approved-release-output\nuget `
   -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false `
-  -p:Version=0.4.0 -p:PackageVersion=0.4.0
+  -p:Version=0.5.0 -p:PackageVersion=0.5.0
 ```
 
 사내 feed에 올리기 전 `.nupkg` inventory, nuspec의 exact ID/version과 빈 dependency

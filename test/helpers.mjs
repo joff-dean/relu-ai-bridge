@@ -67,7 +67,12 @@ export async function fixture(options = {}) {
       multiAgent: true,
       allowArbitraryCommands: false,
     },
-    approvals: { enforceMutatingToolGrants: true, allowPersistentGrants: true, preapprovedScopes: [] },
+    approvals: {
+      policy: 'manual',
+      enforceMutatingToolGrants: true,
+      allowPersistentGrants: true,
+      preapprovedScopes: [],
+    },
     limits: {
       maxReadBytes: 512 * 1024,
       maxWriteBytes: 1024 * 1024,

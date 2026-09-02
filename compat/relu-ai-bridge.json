@@ -4,7 +4,7 @@
   "product": {
     "id": "relu-ai-bridge",
     "name": "RELU AI Bridge",
-    "core_version": "0.4.0",
+    "core_version": "0.5.0",
     "scope": "company-internal-local-capability-ai-bridge"
   },
   "release": {
@@ -16,7 +16,7 @@
       "number": 1,
       "id": "perfetto",
       "name": "Perfetto",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "contract": "v57",
       "manifest": "connectors/perfetto-v57.2.json"
     }

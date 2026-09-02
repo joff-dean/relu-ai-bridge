@@ -107,7 +107,27 @@ string의 `maxLength`는 이 전체 상한을 대체하지 않으며 둘 다 통
 
 ## 승인
 
-모든 generic Context read와 Capability execute는 기본적으로 local approval을 거친다. MCP annotation의 `readOnlyHint`는 설명용이며 dispatch gate가 아니다.
+모든 보호 호출은 local approval policy를 거친다. 새 `init` 설정의 기본 정책은
+`trusted_always`다. 신뢰된 단일 사용자 로컬 환경을 전제로 `always` 결정을 허용한
+호출을 별도 UI 확인이나 grant 저장 없이 즉시 통과시킨다. 0.4.x 설정에서 `policy`와
+deprecated `enforceMutatingToolGrants`가 모두 없거나 legacy 값이 `true`이면 안전한
+업그레이드를 위해 `manual`로 해석한다. legacy 값이 `false`이면 이전 무프롬프트
+동작을 보존해 `trusted_always`로 해석한다. 대화형 승인이 필요한 장비는 legacy 키를
+제거하고 `approvals.policy:"manual"`을 명시한다.
+
+`trusted_always`는 AI 모델, browser content, Android log 또는 trace를 신뢰한다는 뜻이
+아니다. MCP/client 인증, permission, server-owned service/Capability registry,
+connector identity, schema/byte/concurrency 제한, approved root와 command profile,
+Context guard 및 mutation ledger를 하나도 끄지 않는다. `once/deny`만 허용한 ambiguous
+operation reconciliation은 자동 허용 대상이 아니며 두 정책 모두 운영자의 명시적
+확인을 요구한다. MCP annotation의 `readOnlyHint`도 설명용일 뿐 이 경계를 정하지 않는다.
+
+이 제품에서 local-first는 원격 ingress를 열지 않는다는 뜻이며 모든 outbound egress를
+자동 금지한다는 뜻은 아니다. Platform/security가 exact endpoint·method·credential을
+registry에 고정한 사내 HTTP Capability도 활성 permission처럼 `trusted_always`의 대상이
+될 수 있다. `goal.mode:"remote"` 역시 별도 endpoint와 전용 credential을 명시한 경우만
+동작한다. 무 egress 장비는 HTTP Capability와 remote goal을 등록하지 않고 OS egress
+정책으로도 차단한다.
 
 Approval scope tuple:
 
@@ -128,6 +148,8 @@ Desktop app ID 원문은 routing/authentication metadata로만 사용한다. 별
 page/application-instance binding이 browser page load 또는 stable desktop instance를
 묶는다.
 
+`manual` 정책의 결정은 다음과 같다.
+
 - `once`: 같은 MCP session의 scope + arguments digest + operation ID가 같은 요청 한 번
 - `session`: pending 생성 시 서버가 검증한 Claude/Codex MCP session ID
 - `always`: exact scope
@@ -135,15 +157,21 @@ page/application-instance binding이 browser page load 또는 stable desktop ins
 
 Approval decision body가 session ID를 바꿀 수 없다. Pending은 TTL과 총 개수 상한이 있다. `once` grant는 소비와 동시에 제거되고 `session` grant는 MCP session 종료·만료 또는 process 재시작 때 제거된다. Grant는 `/admin/`에서 철회할 수 있다. Schema/effect/connector peer/page 또는 application-instance/resource binding/connector version/policy epoch 변경은 기존 grant를 자동으로 무효화한다. 파일은 canonical root·read-only·protected pattern 정책, command는 해당 root와 정규화된 profile 전체가 scope 지문에 들어가므로 같은 ID/이름으로 설정 대상을 교체해도 영구 grant를 재사용할 수 없다.
 
+`trusted_always`는 자동 허용용 pending/grant를 만들지 않으므로 개별 철회 대상도 없다.
+정책 변경은 Bridge 재시작 때 적용되며 서로 다른 정책에서 만든 기존 pending/grant를
+무효화한다. `preapprovedScopes`와 `allowPersistentGrants`는 수동 정책용 설정이다.
+
 승인 전에 input을 byte/depth/node/schema로 검증하고 target snapshot을 만든다. 승인 뒤에는 같은 connection generation, page/application-instance 및 resource binding과 capability인지 다시 검사한다. `executionGuardFields`를 명시하지 않은 기존 browser service는 모든 Context update에서 pending 실행을 취소하고 exact Context version도 재검사한다. 명시한 service는 별도 execution projection을 검사한다. Outbound request의 `contextGuard`는 SDK가 handler 직전 live Context와 비교하며, desktop SDK는 handler 완료 뒤와 success 전송 gate 안에서도 다시 비교한다. 불일치하면 stale 결과를 정상 결과로 반환하지 않고 connector가 내부 failure code `CONTEXT_CHANGED`로 거부한다. Core는 connector error detail을 MCP에 반사하지 않고 이 allowlist code만 고정 문구 `Connector selection context changed; call get_context and retry`로 변환한다. Unknown code는 일반 `Connector action failed`로, output contract 위반은 고정 문구 `Connector result violated the configured output contract`로 축소한다.
 
-Desktop의 stable application-instance binding과 `bindingFields` resource binding은 같은 dataset에
-대한 persistent grant를 앱 재시작 뒤에도 유지한다. 빠르게 바뀌는 selection 값은 별도
-`executionGuardFields`에 두어 항상 승인의 scope를 selection마다 늘리지 않으면서 stale
-dispatch는 막는다. Guard mode/field 자체도 approval scope에 포함되므로 정책 변경 뒤
-이전 grant를 재사용할 수 없다.
+Desktop의 stable application-instance binding과 `bindingFields` resource binding은 같은 dataset의
+권한 경계를 앱 재시작 뒤에도 안정적으로 식별한다. `manual`에서는 같은 경계의 persistent
+grant를 유지하고, `trusted_always`에서는 개별 grant 없이 검사한다. 빠르게 바뀌는 selection
+값은 별도 `executionGuardFields`에 두어 stale dispatch를 막는다. Guard mode/field 자체도
+scope에 포함되므로 정책·계약 변경을 이전 수동 grant로 우회할 수 없다.
 
-보안 때문에 browser reload는 새 page instance다. 반복 호출 중 `현재 세션` 또는 `항상 허용`은 매번 묻지 않지만 다른 탭·reload에 자동 승계하지 않는다.
+보안 때문에 browser reload는 새 page instance다. `manual` grant는 다른 탭·reload에
+승계되지 않는다. `trusted_always`는 새 instance에서도 prompt는 생략하지만 새 identity,
+resource와 execution guard 검사를 그대로 수행한다.
 
 ## Mutation과 timeout
 
@@ -180,7 +208,7 @@ Public session list는 service, opaque key, time, Capability 이름만 반환한
 }
 ```
 
-Audit는 category, action, service/capability ID, opaque binding, status, duration 같은 metadata만 남긴다. 자동 ChatGPT 대화 event는 `permissions.sessions`와 `privacy.recordSessions`가 모두 켜진 경우에만 session 파일에 기록되며, text와 metadata key/value에 bounded recursive redaction을 적용한다. 둘 중 하나라도 꺼지면 transcript는 Goal 판정에 필요한 동안 process memory에만 존재하고 재시작 시 폐기된다.
+Audit는 category, action, service/capability ID, opaque binding, status, duration 같은 metadata만 남긴다. `trusted_always`에서도 `privacy.recordAudit`가 켜져 있으면 기존 MCP 호출 성공/실패 기록은 남지만 별도 pending/grant 또는 자동 승인 결정 레코드는 만들지 않는다. 자동 ChatGPT 대화 event는 `permissions.sessions`와 `privacy.recordSessions`가 모두 켜진 경우에만 session 파일에 기록되며, text와 metadata key/value에 bounded recursive redaction을 적용한다. 둘 중 하나라도 꺼지면 transcript는 Goal 판정에 필요한 동안 process memory에만 존재하고 재시작 시 폐기된다.
 
 둘 중 하나라도 꺼진 private session의 durable 파일에는 opaque session ID, control token HMAC 기반 conversation key, 명시적 Goal과 Compact & Resume handoff text만 남는다. Raw title, conversation ID/URL, prime ID, browser event/metadata와 replacement ID/URL은 volatile binding이며 시작 시 legacy 파일에서도 scrub한다. HMAC은 원문 ID를 복원할 수 없고 동일 control token 아래에서 equality match만 제공한다. Control token 회전은 기존 자동 match를 끊으므로 opaque session ID를 사용한 명시적 Resume/rebind가 필요하다. Remote connector error text와 HTTP error body는 MCP/audit에 반사하지 않는다. Redactor는 token/secret/password/authorization/API-key 이름을 가린다.
 
@@ -296,8 +324,10 @@ Generic `execute(query_sql)`은 이 경로를 우회하지 않고 `perfetto_quer
 ## 사고 대응
 
 1. Bridge process와 관련 Connector를 중지한다.
-2. 유출 범위에 맞춰 control/service/API credential을 각각 회전한다.
-3. `approvals.json` grant를 철회하거나 안전하게 백업 후 제거한다.
-4. audit에서 metadata 중심으로 service/capability/time 범위를 확인한다.
-5. config, release tag/SHA와 internal mirror immutability를 재검증한다.
-6. 원인을 synthetic fixture로 일반화해 외부 regression test에 추가한다. 회사 data/hostname/diff는 외부로 반출하지 않는다.
+2. 관련 `permissions` 또는 connector service를 비활성화한다. `manual` 전환만으로는 이미
+   유효한 grant를 차단하는 비상 정지가 되지 않는다.
+3. 유출 범위에 맞춰 control/service/API credential을 각각 회전한다.
+4. 수동 정책의 `approvals.json` grant를 철회하거나 안전하게 백업 후 제거한다.
+5. audit에서 metadata 중심으로 service/capability/time 범위를 확인한다.
+6. config, approval policy, release tag/SHA와 internal mirror immutability를 재검증한다.
+7. 원인을 synthetic fixture로 일반화해 외부 regression test에 추가한다. 회사 data/hostname/diff는 외부로 반출하지 않는다.

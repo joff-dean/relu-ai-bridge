@@ -156,7 +156,7 @@ def require_unique_regex(source, pattern, label, flags=0):
 
 require(relu["product"]["id"] == "relu-ai-bridge", "core product id")
 require(relu["product"]["name"] == "RELU AI Bridge", "core product name")
-require(relu["product"]["core_version"] == "0.4.0", "core version")
+require(relu["product"]["core_version"] == "0.5.0", "core version")
 require(package["name"] == relu["product"]["id"], "root package name")
 require(package["version"] == relu["product"]["core_version"], "root package version")
 require(sdk["name"] == "@company/relu-ai-connector", "SDK package name")
@@ -251,9 +251,9 @@ require_unique_regex(web_connector_code, rf"^[ \t]*this\.connectorVersion = Stri
 require_unique_regex(dotnet_options_code, rf'^[ \t]*public string ConnectorVersion \{{ get; init; \}} = "{version}";[ \t]*$', ".NET connector default version", re.MULTILINE)
 require(relu["connectors"][0]["number"] == 1, "connector number")
 require(relu["connectors"][0]["id"] == "perfetto", "connector id")
-require(relu["connectors"][0]["version"] == "0.4.0", "core connector version")
+require(relu["connectors"][0]["version"] == "0.5.0", "core connector version")
 require(relu["connectors"][0]["manifest"] == "connectors/perfetto-v57.2.json", "connector manifest path")
-require(data["connector"]["version"] == "0.4.0", "Perfetto connector version")
+require(data["connector"]["version"] == "0.5.0", "Perfetto connector version")
 require(data["connector"]["version"] == relu["connectors"][0]["version"], "core/connector version alignment")
 upstream = data["public_baseline"]
 require(upstream["repository"] == "https://github.com/google/perfetto.git", "Perfetto repository")

@@ -82,7 +82,7 @@ perfetto = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
 if relu.get("product") != {
     "id": "relu-ai-bridge",
     "name": "RELU AI Bridge",
-    "core_version": "0.4.0",
+    "core_version": "0.5.0",
     "scope": "company-internal-local-capability-ai-bridge",
 }:
     raise SystemExit("RELU AI Bridge core compatibility contract 불일치")

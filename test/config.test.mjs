@@ -46,6 +46,7 @@ test('initial config generates separate control and Perfetto connector tokens wi
   assert.equal(raw.permissions.goalLoop, false);
   assert.equal(raw.permissions.multiAgent, false);
   assert.deepEqual(raw.commandProfiles, {});
+  assert.equal(raw.approvals.policy, 'trusted_always');
   assert.deepEqual(raw.approvals.preapprovedScopes, []);
   assert.equal(raw.limits.maxConcurrentCommands, 4);
   assert.equal(raw.limits.maxConcurrentCommandsPerRoot, 2);
@@ -74,6 +75,7 @@ test('config loads a strict service registry with separate connector credential'
   const { file } = await configFiles(env);
   const config = await loadConfig({ configPath: file, environment });
   assert.equal(config.dataDir, env.dataDir);
+  assert.equal(config.approvals.policy, 'trusted_always');
   assert.equal(config.connectors.services[0].id, 'battery-viewer');
   assert.equal(config.connectors.services[0].token, environment.RELU_BATTERY_CONNECTOR_TOKEN);
   assert.equal(config.perfetto.token, environment.RELU_PERFETTO_CONNECTOR_TOKEN);
@@ -95,6 +97,52 @@ test('config loads a strict service registry with separate connector credential'
   assert.equal(redacted.includes('log_api_credential'), false);
   assert.equal(redacted.includes('main_control_token'), false);
   assert.equal(redacted.includes('perfetto_connector_token'), false);
+});
+
+test('approval policy keeps manual mode and rejects ambiguous or unknown configuration', async (t) => {
+  const env = await fixture();
+  t.after(() => env.cleanup());
+  const { raw, file } = await configFiles(env);
+
+  raw.approvals.policy = 'manual';
+  await fs.writeFile(file, JSON.stringify(raw));
+  assert.equal((await loadConfig({ configPath: file, environment })).approvals.policy, 'manual');
+
+  delete raw.approvals.policy;
+  delete raw.approvals.enforceMutatingToolGrants;
+  await fs.writeFile(file, JSON.stringify(raw));
+  assert.equal((await loadConfig({ configPath: file, environment })).approvals.policy, 'manual');
+
+  raw.approvals.enforceMutatingToolGrants = false;
+  await fs.writeFile(file, JSON.stringify(raw));
+  assert.equal((await loadConfig({ configPath: file, environment })).approvals.policy, 'trusted_always');
+
+  raw.approvals.policy = 'manual';
+  await fs.writeFile(file, JSON.stringify(raw));
+  await assert.rejects(
+    () => loadConfig({ configPath: file, environment }),
+    /conflicts with deprecated/u,
+  );
+
+  delete raw.approvals.enforceMutatingToolGrants;
+
+  for (const policy of ['always', 'TRUSTED_ALWAYS', '', null, true]) {
+    raw.approvals.policy = policy;
+    await fs.writeFile(file, JSON.stringify(raw));
+    await assert.rejects(
+      () => loadConfig({ configPath: file, environment }),
+      /approvals\.policy must be trusted_always or manual/u,
+    );
+  }
+
+  delete raw.approvals.policy;
+  raw.approvals.manul = true;
+  await fs.writeFile(file, JSON.stringify(raw));
+  await assert.rejects(() => loadConfig({ configPath: file, environment }), /approvals\.manul is unsupported/u);
+
+  raw.approvals = [];
+  await fs.writeFile(file, JSON.stringify(raw));
+  await assert.rejects(() => loadConfig({ configPath: file, environment }), /approvals must be an object/u);
 });
 
 test('config normalizes exact desktop app clients and separates resource from execution guards', async (t) => {

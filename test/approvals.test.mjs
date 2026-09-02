@@ -1,7 +1,119 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import test from 'node:test';
 import { fixture } from './helpers.mjs';
 import { ApprovalRequiredError, ApprovalStore } from '../src/approvals.mjs';
+
+test('trusted_always approves always-eligible calls without creating prompt state or durable grants', async (t) => {
+  const env = await fixture({ approvals: { policy: 'trusted_always' } });
+  t.after(() => env.cleanup());
+  const store = new ApprovalStore(env.config);
+  await store.initialize();
+
+  const result = await store.require({
+    scope: 'relu.capability:trusted',
+    summary: 'run one configured capability',
+    details: { operationId: 'operation_1' },
+  });
+
+  assert.deepEqual(result, { approvedBy: 'trusted_always' });
+  assert.deepEqual(store.list().pending, []);
+  assert.deepEqual(store.list().grants, []);
+  assert.equal(store.list().policy, 'trusted_always');
+
+  await assert.rejects(
+    () => store.require({
+      scope: 'relu.operation.reconcile:trusted',
+      summary: 'reconcile one ambiguous local operation',
+      details: { operationId: 'operation_1' },
+      allowedDecisions: ['once', 'deny'],
+    }),
+    ApprovalRequiredError,
+  );
+  assert.equal(store.list().pending.length, 1);
+  await assert.rejects(
+    () => store.require({
+      scope: 'relu.operation.reconcile:malformed',
+      summary: 'malformed decision policy',
+      allowedDecisions: ['always'],
+    }),
+    /Approval decision policy is invalid/u,
+  );
+});
+
+test('approval store fails closed when handed a non-normalized policy', async (t) => {
+  const env = await fixture();
+  t.after(() => env.cleanup());
+
+  for (const policy of [undefined, null, 'always', 'TRUSTED_ALWAYS']) {
+    env.config.approvals.policy = policy;
+    assert.throws(() => new ApprovalStore(env.config), /Approval policy is invalid/u);
+  }
+});
+
+test('approval store invalidates grants when persisted policy is malformed rather than missing', async (t) => {
+  const env = await fixture();
+  t.after(() => env.cleanup());
+  await fs.mkdir(env.dataDir, { recursive: true });
+  await fs.writeFile(path.join(env.dataDir, 'approvals.json'), JSON.stringify({
+    policy: null,
+    grants: [{
+      id: 'grant_stale',
+      scope: 'file.write:project',
+      mode: 'always',
+      summary: 'must not survive',
+      createdAt: new Date().toISOString(),
+    }],
+    pending: [],
+  }));
+
+  const store = new ApprovalStore(env.config);
+  await store.initialize();
+  assert.deepEqual(store.list().grants, []);
+  await assert.rejects(
+    () => store.require({ scope: 'file.write:project', summary: 'requires fresh approval' }),
+    ApprovalRequiredError,
+  );
+});
+
+test('changing approval policy invalidates old pending requests and persistent grants', async (t) => {
+  const env = await fixture();
+  t.after(() => env.cleanup());
+  const manual = new ApprovalStore(env.config);
+  await manual.initialize();
+
+  let request;
+  await assert.rejects(
+    () => manual.require({ scope: 'file.write:project', summary: 'old manual grant' }),
+    (error) => { request = error.request; return error instanceof ApprovalRequiredError; },
+  );
+  await manual.decide(request.id, 'always');
+  await assert.rejects(
+    () => manual.require({
+      scope: 'relu.operation.reconcile:old',
+      summary: 'old restricted request',
+      allowedDecisions: ['once', 'deny'],
+    }),
+    ApprovalRequiredError,
+  );
+
+  env.config.approvals.policy = 'trusted_always';
+  const trusted = new ApprovalStore(env.config);
+  await trusted.initialize();
+  assert.deepEqual(trusted.list().grants, []);
+  assert.deepEqual(trusted.list().pending, []);
+
+  env.config.approvals.policy = 'manual';
+  const manualAgain = new ApprovalStore(env.config);
+  await manualAgain.initialize();
+  assert.deepEqual(manualAgain.list().grants, []);
+  assert.deepEqual(manualAgain.list().pending, []);
+  await assert.rejects(
+    () => manualAgain.require({ scope: 'file.write:project', summary: 'must approve again' }),
+    ApprovalRequiredError,
+  );
+});
 
 test('an always grant persists and can be revoked', async (t) => {
   const env = await fixture();

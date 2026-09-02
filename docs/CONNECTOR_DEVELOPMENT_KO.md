@@ -10,7 +10,7 @@ publish하지 않는다. 검증된 RELU release와 SDK version을 함께 고정�
 
 - 사내 registry: 보안 검토한 release의 `sdk/`만 내부 packaging 저장소로 복사하고,
   회사 scope/name을 확정한 사내 manifest에서만 `private`를 제거해 내부 registry에
-  publish한다. 서비스 lockfile은 정확한 `0.4.0` artifact digest를 고정한다.
+  publish한다. 서비스 lockfile은 정확한 `0.5.0` artifact digest를 고정한다.
 - vendoring: 서비스 저장소의 `vendor/relu-ai-connector/`에 검토한 `sdk/` 파일을
   복사하고 `"@company/relu-ai-connector": "file:./vendor/relu-ai-connector"`처럼
   상대 file dependency를 사용한다.
@@ -221,7 +221,7 @@ Desktop registry에서는 persistent resource와 빠르게 바뀌는 실행 대�
 }
 ```
 
-이렇게 하면 같은 dataset에 대한 `항상 허용`은 유지하면서 승인 대기나 handler 실행
+이렇게 하면 같은 dataset에서 승인 창을 반복하지 않으면서 승인 대기나 handler 실행
 중 selection ID/revision 또는 전체 `selection` 범위가 바뀐 요청은 거부한다.
 `executionGuardFields`는 모두 required top-level
 Context property여야 한다. 기존 browser service가 이 필드를 생략하면 하위호환을 위해
@@ -299,20 +299,27 @@ node scripts/generate-token.mjs connector
 
 Connector token은 `/mcp`, `/bridge/approvals`, `/api/v1/*`의 인증에 사용할 수 없다. Control token으로도 connector client HMAC proof를 만들 수 없다.
 
-## 7. 승인 UX
+## 7. 승인 정책 UX
 
-사용자는 `/admin/`에서 Capability의 service, effect, opaque session key, argument digest를 보고 승인한다.
+새 설치의 `trusted_always` 정책은 `always` 결정이 가능한 보호 호출을 pending/grant 없이
+즉시 통과시킨다. 대화형 통제가 필요하면 `manual`을 사용하며, 이때 사용자는
+`/admin/`에서 Capability의 service, effect, opaque session key와 argument digest를
+보고 승인한다.
 
 승인 scope의 connector peer는 browser의 server-observed exact Origin 또는 allowlist의
 desktop app ID에서 도출한 `relu-desktop://<sha256>` opaque trust-domain key다. Desktop
 app ID 원문과 stable instance ID 원문을 scope·원장에 넣지 않으며, 별도의
 page/application-instance binding이 실제 탭 또는 application instance를 묶는다.
 
-- 반복 조회는 `현재 세션` 또는 `항상 허용`으로 매번 묻지 않게 할 수 있다.
+- `trusted_always`는 일반 반복 조회에 개별 grant를 만들지 않는다. `manual`에서는
+  `현재 세션` 또는 `항상 허용`을 선택할 수 있다.
 - schema, effect, connector peer, page/application-instance 및 resource binding, execution guard mode/field,
-  connector version 또는 `policyEpoch`가 바뀌면 새 scope가 되어 다시 승인한다.
+  connector version 또는 `policyEpoch`가 바뀌면 새 scope가 된다. `manual`에서는 다시
+  승인하며, `trusted_always`에서도 새 경계와 guard를 검사한다.
 - UI/data mutation은 `operationId` 없이는 dispatch하지 않는다.
-- mutation timeout/실패 응답/invalid result는 결과가 모호한 상태다. 자동 retry나 새 탭 우회를 하지 말고 `/admin/`의 변경 작업 원장에서 실제 서비스 상태를 확인한 뒤 별도 local approval로 판정한다.
+- mutation timeout/실패 응답/invalid result는 결과가 모호한 상태다. 자동 retry나 새 탭
+  우회를 하지 말고 `/admin/`의 변경 작업 원장에서 실제 서비스 상태를 확인한 뒤
+  `once/deny` 전용 local approval로 판정한다. 이 확인은 `trusted_always`도 생략하지 않는다.
 
 ## 8. 검증 체크리스트
 

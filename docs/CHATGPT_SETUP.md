@@ -68,7 +68,7 @@ Companion은 각 API 호출 전에 민감한 path/body를 보내지 않는 chall
 Bridge의 fresh HMAC proof를 검증한다. 그 뒤 method/path/body digest에 묶인 one-shot
 proof만 보내며 raw control token을 Authorization header로 전송하지 않는다.
 확장 프로그램을 제거하거나 ID가 바뀌면 allowlist의 이전 ID를 삭제하고, 의심되는
-경우 control token과 저장된 local grant를 함께 회전·철회한다. `403`이면 실제
+경우 control token을 회전하며 수동 정책의 저장 grant도 함께 철회한다. `403`이면 실제
 extension ID와 allowlist, Bridge 재시작 여부부터 확인한다.
 
 ## 2A. Local Codex/ChatGPT desktop 연결
@@ -92,7 +92,9 @@ default_tools_approval_mode = "writes"
 - `/mcp` 호출에 401이 아닌 initialize 응답이 오는지
 - tool schema 변경 뒤 새 session에서 목록이 갱신됐는지
 
-플랫폼 승인과 이 프로젝트의 local approval은 별개다. 반복 작업에는 플랫폼에서 지원하는 approval mode와 local admin의 `항상 허용`을 각각 필요한 scope에만 설정한다.
+플랫폼 승인과 이 프로젝트의 local policy는 별개다. 새 RELU 설정의
+`trusted_always`는 로컬의 always-eligible 호출을 자동 허용하지만 Codex/ChatGPT
+플랫폼 자체의 approval mode나 사용자 의도를 바꾸지 않는다.
 
 현재 Perfetto/WPF 선택 구간의 분석 절차도 함께 쓰려면 project scope Skill을 설치한다.
 
@@ -158,15 +160,18 @@ http://127.0.0.1:5746/mcp/<RELU_AI_BRIDGE_TOKEN>
 
 이 URL 전체가 credential이다. 일반 log, ticket, chat, screenshot 또는 release manifest에 기록하지 않는다. Browser/control API는 계속 bearer 인증을 요구한다.
 
-## 3. 승인 처리
+## 3. 승인 정책
 
-Tool이 `APPROVAL_REQUIRED`를 반환하면 다음 주소를 연다.
+새 `init` 설정은 `approvals.policy:"trusted_always"`다. 일반 보호 호출은 개별
+pending/grant 없이 같은 호출에서 실행된다. `manual`을 선택했거나 결과 불명 변경의
+판정처럼 `once/deny`만 가능한 요청에서 Tool이 `APPROVAL_REQUIRED`를 반환하면 다음
+주소를 연다.
 
 ```text
 http://127.0.0.1:5746/admin/
 ```
 
-Token을 입력한 뒤 다음 중 하나를 고른다.
+Token을 입력한 뒤 해당 요청이 허용하는 결정 중 하나를 고른다.
 
 - `한 번`: 정확히 같은 요청을 다음 1회만 허용
 - `현재 세션`: 같은 session과 scope 허용
@@ -178,7 +183,9 @@ desktop app ID에서 도출한 `relu-desktop://<sha256>` opaque trust-domain key
 page/application-instance binding과 `bindingFields` resource도 scope에 결합되므로
 다른 탭·desktop 설치·dataset으로 권한이 확장되지 않는다.
 
-승인 후 원래 MCP tool call을 다시 실행한다. 영구 grant는 같은 화면에서 철회한다.
+결정 후 원래 MCP tool call을 다시 실행한다. 수동 영구 grant는 같은 화면에서
+철회한다. `trusted_always` 구성 정책은 개별 grant가 아니며 설정을 `manual`로 바꾸고
+Bridge를 재시작해 해제한다. 정책 전환 시 이전 pending/grant는 무효화된다.
 
 ## 문제 해결
 

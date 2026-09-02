@@ -14,7 +14,7 @@ RELU AI Bridge @ explicit loopback
       ├─ MCP router
       ├─ Session + Context Registry
       ├─ server-owned Capability Registry
-      ├─ scoped Approval Store
+      ├─ trusted_always / manual Approval Policy
       ├─ bounded Audit
       └─ Connector Broker
              │
@@ -52,7 +52,7 @@ Capability 이름, schema, effect 또는 resource ID만으로 권한을 넓히�
 
 Context는 Bridge 메모리에만 존재한다. 탭이 끊기면 제거되고 기본 session/audit 파일에는 기록되지 않는다. 목록 API는 Context 원문이나 page title/URL 대신 opaque session key와 서비스 이름만 반환한다.
 
-각 service는 `bindingFields`로 payload/document/account처럼 권한과 작업 중복 방지에 필요한 top-level Context 필드를 지정한다. Bridge는 projection hash를 resource binding으로 사용한다. 승인 뒤 server snapshot을 다시 검사하고, outbound browser request에도 projection guard를 넣는다. SDK가 handler 직전에 live Context와 비교하므로 100ms context-update debounce 사이의 stale 요청도 실행되지 않는다.
+각 service는 `bindingFields`로 payload/document/account처럼 권한과 작업 중복 방지에 필요한 top-level Context 필드를 지정한다. Bridge는 projection hash를 resource binding으로 사용한다. local policy를 통과한 뒤 server snapshot을 다시 검사하고, outbound browser request에도 projection guard를 넣는다. SDK가 handler 직전에 live Context와 비교하므로 100ms context-update debounce 사이의 stale 요청도 실행되지 않는다.
 
 SDK protocol:
 
@@ -72,7 +72,7 @@ digest를 client proof에 포함한다. Bridge는 proof를 먼저 검증한 뒤 
 JSON parse, identity, Context schema와 Capability 교집합을 확인한다.
 
 `bindingFields`는 persistent resource scope를 결정한다. 선택 구간처럼 빠르게 바뀌는
-필드는 명시적 `executionGuardFields`에 추가할 수 있다. 이 모드에서 Bridge는 승인 뒤와
+필드는 명시적 `executionGuardFields`에 추가할 수 있다. 이 모드에서 Bridge는 policy 통과 뒤와
 dispatch 직전 projection을 재검사하고 Desktop SDK도 handler 직전·직후 live projection을
 비교한다. `executionGuardFields`를 명시하지 않은 기존 browser 계약은 strict
 `contextVersion` mode를 유지해 모든 Context update가 pending 실행을 취소한다.
@@ -103,7 +103,7 @@ Perfetto Trace Processor처럼 엔진이 탭 내부에 있거나 현재 UI를 �
 
 ```text
 execute(session, action, params)
-  → registry/schema/effect/approval
+  → registry/schema/effect/approval policy
   → WebSocket request
   → SDK의 정적 handler
   → bounded schema-validated result
@@ -119,15 +119,16 @@ loading은 사용하지 않는다.
 
 ```text
 execute(session, action, params)
-  → registry/schema/effect/approval
+  → registry/schema/effect/approval policy
   → desktop WebSocket request + selection guard
   → .NET SDK가 live Context 재검증
   → 기존 bounded analysis engine
   → live Context 재검증 + bounded result
 ```
 
-설치별 stable instance ID로 application-instance binding을 재현하므로 같은 dataset의 persistent grant는
-앱 재시작 뒤에도 유지할 수 있다. Resume secret은 process memory에만 둔다. 같은 instance의
+설치별 stable instance ID로 application-instance binding을 재현하므로 `manual`에서는 같은
+dataset의 persistent grant를 앱 재시작 뒤에도 유지할 수 있고, `trusted_always`에서는
+개별 grant 없이 같은 resource 경계를 다시 검사한다. Resume secret은 process memory에만 둔다. 같은 instance의
 live session이 없고 app/instance HMAC이 다시 검증된 경우에만 stale reconnect record를
 회전하며, 살아 있는 session의 takeover는 거부한다.
 
@@ -162,7 +163,11 @@ Perfetto 전용 도구와 제한된 local coding/agent 도구도 같은 MCP에 �
 
 ## 승인 모델
 
-브라우저나 모델은 승인을 생성할 수 없다. Pending request는 local admin/companion UI에서만 결정한다.
+새로 생성한 설정은 `trusted_always`를 명시하며 always-eligible 호출을 prompt/pending/grant
+없이 통과시킨다. `manual`은 기존 once/session/always/deny UI를 사용한다. 브라우저나
+모델은 이 정책을 바꾸거나 수동 승인을 생성할 수 없고, pending request는 local
+admin/companion UI에서만 결정한다. `once/deny` 전용 안전 interlock은 자동 정책에서도
+pending으로 남는다.
 
 승인과 mutation 원장에서 사용하는 **connector peer**는 browser라면 WebSocket
 handshake에서 server가 관찰한 exact Origin이고, desktop이라면 allowlist의 app ID에서
@@ -185,7 +190,10 @@ policy epoch
 execution guard mode + fields
 ```
 
-`once` fingerprint에는 normalized argument digest와 operation ID가 추가된다. `session` grant는 pending 생성 시 서버가 검증한 MCP session ID만 사용하며 승인 요청 body가 이를 바꾸지 못한다. `always`는 exact hashed scope에서만 동작한다.
+수동 `once` fingerprint에는 normalized argument digest와 operation ID가 추가된다.
+`session` grant는 pending 생성 시 서버가 검증한 MCP session ID만 사용하며 승인 요청
+body가 이를 바꾸지 못한다. 수동 `always`는 exact hashed scope에서만 동작한다. 정책을
+전환하면 이전 pending/grant를 무효화해 나중에 재활성화되지 않게 한다.
 
 ## Credential audience
 
@@ -228,7 +236,7 @@ REF/DUT alignment는 feature query 결과만 Worker thread로 넘긴다. coarse 
 기본 `~/.relu-ai-bridge`:
 
 ```text
-approvals.json             pending request와 grant, mode 0600
+approvals.json             active policy와 manual pending/grant, mode 0600
 connector-operations.json  mutation id/hash/status 원장, mode 0600
 connector-operation-archives/*.json  policyEpoch 전환 시 검증된 terminal 원장
 perfetto-sessions.json     REF/DUT binding과 alignment 요약

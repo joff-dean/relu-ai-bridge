@@ -13,7 +13,7 @@ Claude Code / Codex
         RELU AI Bridge (127.0.0.1:5746)
         ├─ Session / Context Registry
         ├─ server-owned Capability Registry
-        ├─ once / session / always 승인
+        ├─ trusted_always 기본 / manual 선택 승인 정책
         ├─ MCP: list_sessions / get_context /
         │        list_capabilities / execute
         └─ Connector별 Data Plane
@@ -40,9 +40,9 @@ Context Plane과 Data Plane을 분리한다.
 - browser Data Plane과 고정 URL의 GET/POST JSON Data Plane
 - 서비스별 connector token, Perfetto token과 MCP/admin control token 분리
 - `list_sessions → get_context → list_capabilities → execute` generic MCP
-- `한 번 / 현재 세션 / 항상 허용 / 거부 / 철회` 로컬 승인
+- 새 설치의 `trusted_always` 자동 허용과 선택 가능한 `manual` 승인
 - MCP session·page/application instance·`bindingFields` resource·connector peer·connector version·schema/effect/policy에 묶인 scope
-- 승인 후 대상 재검증과 SDK 실행 직전 Context guard
+- local policy 통과 후 대상 재검증과 SDK 실행 직전 Context guard
 - resource·`policyEpoch` 단위의 영속 mutation operation ledger, 수동 reconciliation과 검증된 archive
 - Claude가 generic 도구를 우선 찾도록 하는 설정과 `anthropic/alwaysLoad` metadata
 - Claude/Codex 공통 `relu-analyze-selection` Skill과 checksum 기반 설치·검증·제거 도구
@@ -67,7 +67,8 @@ node ./bin/relu-ai-bridge.mjs init \
 Perfetto를 배포하지 않는 장비는 `perfetto.enabled:false`로 명시하면 Perfetto token 주입을 생략할 수 있다.
 생성되는 설정은 의도적으로 read-only다. `write`, `commands`, `goalLoop`,
 `multiAgent`와 모든 command profile은 비활성 상태이며, 사내 보안 검토 뒤 필요한
-기능만 하나씩 켠다.
+기능만 하나씩 켠다. 새로 생성한 설정은 `approvals.policy: "trusted_always"`라서
+활성화된 기능의 일반 보호 호출을 매번 묻지 않는다.
 
 ```bash
 export RELU_AI_BRIDGE_CONFIG="$PWD/config/local.json"
@@ -77,7 +78,7 @@ node ./bin/relu-ai-bridge.mjs doctor
 node ./bin/relu-ai-bridge.mjs serve
 ```
 
-상태와 로컬 승인 UI:
+상태와 로컬 정책·승인 UI:
 
 ```text
 http://127.0.0.1:5746/health
@@ -188,9 +189,9 @@ Server registry 시작점은
 application 연결 시작점은
 [`examples/wpf-android-log-viewer/ReluWpfIntegration.cs`](examples/wpf-android-log-viewer/ReluWpfIntegration.cs)다.
 Desktop endpoint는 `Origin`이 있는 upgrade를 거부하고 app ID·stable instance ID·fresh
-nonce에 묶인 mutual HMAC을 검증한다. `bindingFields`는 dataset 단위 persistent 승인을,
+nonce에 묶인 mutual HMAC을 검증한다. `bindingFields`는 dataset 단위 권한 경계를,
 별도 `executionGuardFields`는 선택 변경 직전 차단을 담당하므로 같은 dataset의 새 구간을
-분석할 때 “항상 허용”을 반복해서 묻지 않는다.
+분석할 때 승인 창을 반복해서 열지 않는다.
 
 각 Capability 결과는 배열 원소별이 아니라 직렬화한 **전체 JSON 결과**가
 `connectors.maxResultBytes` 상한을 통과해야 한다. 따라서 줄·point·section별 상한과
@@ -201,7 +202,30 @@ nonce에 묶인 mutual HMAC을 검증한다. `bindingFields`는 dataset 단위 p
 
 ## 승인 편의성과 경계
 
-첫 보호 호출은 `APPROVAL_REQUIRED`를 반환한다. Admin에서 결정한 뒤 **같은 tool call을 다시 실행**한다.
+`init`으로 새로 만든 사내 로컬 설정의 기본값은 다음과 같다.
+
+```json
+{
+  "approvals": {
+    "policy": "trusted_always"
+  }
+}
+```
+
+`trusted_always`는 `always` 결정을 허용한 보호 호출을 추가 UI 확인, 재시도 또는
+개별 grant 저장 없이 즉시 통과시킨다. 따라서 반복 사용을 위해 승인하거나 나중에
+개별 철회할 항목이 생기지 않는다. 기존 0.4 설정에서 `policy`가 없고 deprecated
+`enforceMutatingToolGrants`도 없거나 `true`이면, 업그레이드만으로 권한이 넓어지지
+않도록 `manual`로 해석한다. 기존 값이 `false`이면 이전의 무프롬프트 동작을 보존해
+`trusted_always`로 해석한다. 어떤 경우든 legacy 키를 제거하고 원하는 `policy`를
+명시한 뒤 Bridge를 재시작하는 것을 권장한다.
+
+| 정책 | 일반 보호 호출 | 저장 상태 |
+| --- | --- | --- |
+| `trusted_always` | 같은 호출에서 즉시 실행 | 자동 허용용 pending/grant 없음 |
+| `manual` | 미승인 시 `APPROVAL_REQUIRED`; 결정 후 같은 호출 재실행 | once/session/always grant |
+
+`manual`에서는 다음 결정을 사용한다.
 
 아래에서 connector peer는 browser의 server-observed exact Origin 또는 allowlist의
 desktop app ID에서 도출한 `relu-desktop://<sha256>` opaque trust-domain key를 뜻한다.
@@ -214,9 +238,20 @@ page/application-instance binding으로 실제 탭·application instance를 묶�
 - `거부`: 현재 pending 요청 거부
 - `철회`: 저장된 grant 즉시 삭제
 
-`항상 허용`은 다른 서비스, connector peer, page/application instance, payload/document/account, 바뀐 schema/effect 또는 임의 파일/명령 권한으로 확대되지 않는다. 파일 grant에는 canonical root/protected-path 정책 지문, 명령 grant에는 그 root와 정규화된 profile 전체 지문이 포함되므로 같은 이름의 대상이나 profile을 바꿔도 재승인이 필요하다. Browser page를 새로 로드하거나 `bindingFields`가 바뀌면 다시 승인한다. Desktop은 같은 stable application-instance binding과 dataset resource를 인증한 정상 재시작에서만 기존 persistent grant를 유지한다. 반복 작업 중에는 한 번 승인으로 계속 사용할 수 있고, 모든 grant는 로컬 UI에서 철회된다.
+자동 허용은 모든 URL·파일·명령을 여는 전역 allowlist가 아니다. 비활성 permission,
+read-only root, protected path, 고정 command profile, service/app/origin allowlist, server-owned
+Capability와 schema, size/concurrency 제한, page/application binding, `bindingFields`,
+`executionGuardFields` 및 `policyEpoch`는 두 정책에서 똑같이 강제된다. Browser reload나
+dataset 변경은 새 경계가 되며 `manual`에서는 다시 승인하고 `trusted_always`에서는
+승인 창 없이 새 경계를 검사한 뒤 진행한다. 정책을 변경하면 이전 pending/grant는
+무효화되어 나중에 수동 모드로 돌아가도 되살아나지 않는다.
 
-변경 작업은 8~128자의 `operationId`가 필요하다. 원장은 service+connector peer+resource+capability 단위로 `connector-operations.json`에 mode 0600으로 저장되어 다른 탭과 재시작 뒤에도 중복 실행을 막는다. Timeout이나 연결 종료로 결과가 모호하면 자동 재시도하지 않으며 `/admin/`에서 실제 서비스 상태를 확인한 뒤 별도 once 승인을 거쳐 `적용됨` 또는 `미적용`으로 판정한다.
+`trusted_always`가 신뢰하는 대상은 단일 사용자 로컬 운영 환경이지 AI 출력이나
+웹/로그/trace 내용이 아니다. 기능을 긴급 차단할 때는 Bridge/Connector를 중지하고
+관련 `permissions` 또는 service를 비활성화한다. credential 노출 가능성이 있으면
+control, Perfetto, service credential을 각각 회전한다.
+
+변경 작업은 8~128자의 `operationId`가 필요하다. 원장은 service+connector peer+resource+capability 단위로 `connector-operations.json`에 mode 0600으로 저장되어 다른 탭과 재시작 뒤에도 중복 실행을 막는다. Timeout이나 연결 종료로 결과가 모호하면 자동 재시도하지 않는다. `/admin/`에서 실제 서비스 상태를 확인한 뒤 `적용됨` 또는 `미적용`으로 판정하며, 이 판정은 `once/deny`만 허용하는 안전 interlock이므로 `trusted_always`에서도 한 번의 명시적 확인이 필요하다.
 
 `connectors.policyEpoch`는 모든 Connector 승인과 mutation ID의 정책 세대를 함께
 바꾸는 단조 증가 값이다. 원장이 비어 있지 않은 상태에서 이를 올릴 때는 Bridge를
@@ -264,7 +299,7 @@ node --test
 dotnet build ./sdk-dotnet/Relu.AI.Bridge.DesktopConnector.sln -c Release -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
 dotnet run --project ./sdk-dotnet/tests/Relu.AI.Bridge.DesktopConnector.Tests/Relu.AI.Bridge.DesktopConnector.Tests.csproj -c Release -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
 dotnet build ./examples/wpf-android-log-viewer/WpfAndroidLogViewer.Integration.csproj -c Release -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
-dotnet pack ./sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj -c Release --no-build --output /absolute/release-output/nuget -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false -p:Version=0.4.0 -p:PackageVersion=0.4.0
+dotnet pack ./sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj -c Release --no-build --output /absolute/release-output/nuget -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false -p:Version=0.5.0 -p:PackageVersion=0.5.0
 ```
 
 Release/NuGet 공급은 상위 MSBuild 파일이 없는 격리 root에서 수행하고 package inventory,

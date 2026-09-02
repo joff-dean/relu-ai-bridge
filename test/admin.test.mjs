@@ -48,3 +48,24 @@ test('admin session creation is approval-gated and can be persistently granted',
   assert.equal(retry.status, 201);
   assert.equal(app.context.perfettoStore.list().length, 1);
 });
+
+test('trusted_always creates an ordinary local session without a prompt or grant', async (t) => {
+  const env = await fixture({ approvals: { policy: 'trusted_always' } });
+  const app = await createApplication({ config: env.config });
+  const address = await app.listen();
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const headers = {
+    authorization: `Bearer ${env.config.server.token}`,
+    'content-type': 'application/json',
+  };
+  t.after(async () => { await app.close(); await env.cleanup(); });
+
+  const response = await fetch(`${baseUrl}/api/v1/perfetto/sessions`, {
+    method: 'POST', headers, body: JSON.stringify({ name: 'trusted pair' }),
+  });
+  assert.equal(response.status, 201);
+  assert.equal(app.context.perfettoStore.list().length, 1);
+  assert.deepEqual(app.context.approvals.list().pending, []);
+  assert.deepEqual(app.context.approvals.list().grants, []);
+  assert.equal(app.context.approvals.list().policy, 'trusted_always');
+});

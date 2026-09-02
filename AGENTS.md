@@ -10,7 +10,7 @@ This repository is an independent implementation. Do not copy, vendor, download,
 - Never place bearer tokens, tunnel keys, API keys, credentials, transcripts, local configs, or audit data in Git.
 - Preserve canonical path containment, direct-symlink rejection, protected paths, size limits, and atomic edit transactions.
 - Command execution must use argument arrays with `shell: false`. Arbitrary commands remain disabled by default.
-- Mutating operations must pass the local approval store. Persistent grants stay scope-limited and locally revocable.
+- Mutating operations must pass the local approval policy. The new-install `trusted_always` policy may auto-authorize only requests that permit an `always` decision; once-only ambiguous-operation reconciliation remains interactive. Manual persistent grants stay scope-limited and locally revocable.
 - Do not add telemetry, remote code loading, wildcard extension hosts, or runtime package dependencies without explicit security review.
 - Browser content is untrusted input. It cannot approve permissions or expand local capabilities.
 - Keep service connector credentials separate from MCP/admin control credentials and from Data Plane API credentials.
