@@ -1,6 +1,6 @@
 # RELU AI Bridge
 
-RELU AI Bridge는 Claude·Codex 같은 로컬 AI 클라이언트를 사내 웹 분석 서비스에 연결하는 **독립 구현 local-first MCP 플랫폼**이다. 브라우저는 사용자가 현재 보는 화면의 구조화된 Context만 알려주고, 실제 조회·UI 동작은 서비스별로 사전에 등록한 Capability만 실행한다. AI가 임의 URL, HTTP method, header, script, DOM selector 또는 shell command를 만드는 범용 proxy가 아니다.
+RELU AI Bridge는 Claude·Codex 같은 로컬 AI 클라이언트를 사내 웹 분석 서비스와 Windows 데스크톱 분석 프로그램에 연결하는 **독립 구현 local-first MCP 플랫폼**이다. Browser/WPF Connector는 사용자가 현재 보는 화면의 구조화된 Context만 알려주고, 실제 조회·UI 동작은 서비스별로 사전에 등록한 Capability만 실행한다. AI가 임의 URL, HTTP method, header, script, DOM selector, reflection target 또는 shell command를 만드는 범용 proxy가 아니다.
 
 Perfetto v57.2 REF/DUT 분석은 이 플랫폼의 첫 번째 커넥터다. 이후 Android Log Viewer, LLM Wiki, Issue DB 같은 서비스를 같은 방식으로 추가할 수 있다.
 
@@ -18,41 +18,44 @@ Claude Code / Codex
         │        list_capabilities / execute
         └─ Connector별 Data Plane
                  │
-       ┌─────────┼───────────┬──────────┐
-       ▼         ▼           ▼          ▼
-   Perfetto   Log Viewer   LLM Wiki   Issue DB
-   browser TP browser/API  fixed API  fixed API
+       ┌─────────┼────────────┬──────────┐
+       ▼         ▼            ▼          ▼
+   Perfetto   WPF Log      LLM Wiki   Issue DB
+   browser TP desktop SDK  fixed API  fixed API
 ```
 
 Context Plane과 Data Plane을 분리한다.
 
-- **Context Plane**: 브라우저 탭이 `payloadId`, 선택 시간, 현재 문서 같은 현재 화면 문맥을 loopback WebSocket으로 보낸다.
-- **Data Plane**: 서버 설정에 고정된 browser handler 또는 정확한 사내 API endpoint로만 조회한다. API credential은 Bridge process에만 둔다.
+- **Context Plane**: 브라우저 탭 또는 데스크톱 앱이 opaque resource, 선택 시간, revision 같은 현재 화면 문맥을 전용 loopback WebSocket으로 보낸다.
+- **Data Plane**: 서버 설정에 고정된 browser/desktop handler 또는 정확한 사내 API endpoint로만 조회한다. API credential은 Bridge process에만 둔다.
 - **MCP Plane**: Claude/Codex는 서비스별 MCP를 여러 개 등록하지 않고 RELU 하나에서 세션과 Capability를 발견한다.
 
 ## 구현된 기능
 
 - 범용 live session/context registry와 active-tab 추적
 - 공통 브라우저 SDK `@company/relu-ai-connector`
-- 서버 권위의 서비스별 exact Origin, Capability, 입력·출력 schema, effect policy
+- .NET 8 Desktop Connector SDK와 WPF Android Log Viewer 통합 예제
+- browser와 분리된 `/relu/desktop/ws`, app/instance mutual HMAC, stale-selection guard
+- 서버 권위의 서비스별 connector peer, Capability, 입력·출력 schema, effect policy
 - browser Data Plane과 고정 URL의 GET/POST JSON Data Plane
 - 서비스별 connector token, Perfetto token과 MCP/admin control token 분리
 - `list_sessions → get_context → list_capabilities → execute` generic MCP
 - `한 번 / 현재 세션 / 항상 허용 / 거부 / 철회` 로컬 승인
-- MCP session·page instance·`bindingFields` resource·Origin·connector version·schema/effect/policy에 묶인 scope
+- MCP session·page/application instance·`bindingFields` resource·connector peer·connector version·schema/effect/policy에 묶인 scope
 - 승인 후 대상 재검증과 SDK 실행 직전 Context guard
 - resource·`policyEpoch` 단위의 영속 mutation operation ledger, 수동 reconciliation과 검증된 archive
 - Claude가 generic 도구를 우선 찾도록 하는 설정과 `anthropic/alwaysLoad` metadata
+- Claude/Codex 공통 `relu-analyze-selection` Skill과 checksum 기반 설치·검증·제거 도구
 - Perfetto v57.2 Connector #1, bounded read-only SQL, durable REF/DUT, coarse correlation + constrained DTW
 - 제한된 파일/명령 profile, Goal, Compact & Resume, browser worker 기능
 - 외부 release bundle, manifest, 사내 immutable mirror와 integration 검증 자동화
 - runtime npm dependency와 telemetry 없음
 
-Chat On Steroids나 다른 외부 agent 프로젝트의 코드·runtime을 복사하거나 실행하지 않는다. Node.js 표준 라이브러리와 공개 Perfetto API로 작성됐다.
+Chat On Steroids나 다른 외부 agent 프로젝트의 코드·runtime을 복사하거나 실행하지 않는다. Node.js와 .NET 8 표준 라이브러리 및 공개 Perfetto API로 작성됐다.
 
 ## 빠른 시작
 
-요구사항은 Node.js 20.11 이상과 macOS/Linux다. Windows local server도 가능하지만 Perfetto overlay script는 WSL 또는 Linux build worker를 권장한다.
+요구사항은 Node.js 20.11 이상이다. macOS/Linux와 Windows local server를 지원하며, .NET 예제는 .NET 8 SDK가 필요하다. Perfetto overlay script는 WSL 또는 Linux build worker를 권장한다.
 
 ```bash
 node ./bin/relu-ai-bridge.mjs init \
@@ -111,6 +114,19 @@ Claude Code 프로젝트의 `.mcp.json` 예시:
 
 Claude Code trust, 사내 managed MCP, Claude Desktop packaging, claude.ai 원격 연결 경계는 [Claude 설정 가이드](docs/CLAUDE_SETUP_KO.md)에 자세히 설명한다.
 
+현재 선택 구간의 분석 순서와 보고 형식을 Claude/Codex에 함께 공급하려면 정본 Skill을
+설치한다. Project scope 예시는 다음과 같다.
+
+```bash
+ANALYSIS_PROJECT=/absolute/path/to/analysis-project
+./scripts/skills/install-skills.sh --scope project --target both --project-root "$ANALYSIS_PROJECT"
+./scripts/skills/verify-skills.sh --scope project --target both --project-root "$ANALYSIS_PROJECT"
+```
+
+Windows PowerShell 명령과 checksum 기반 안전한 갱신·제거 절차는
+[분석 Skill 설계와 배포](docs/SKILLS_KO.md)를 따른다. Skill은 권한을 추가하지 않으며,
+매 분석의 실제 실행 계약은 live `list_capabilities`가 결정한다.
+
 ## 첫 사내 웹서비스 커넥터 추가
 
 `config/battery-viewer.service.example.json`을 복사해 서비스의 정확한 Origin, Context schema와 Capability schema를 정의하고 주 설정의 `connectors.services`에 넣는다.
@@ -156,19 +172,51 @@ SDK는 연결, 상호 인증, heartbeat, 재연결, context update와 action rou
 
 서버 API가 있는 Wiki/DB는 browser를 우회해 설정에 고정한 HTTPS endpoint로 직접 조회할 수 있다. 브라우저는 현재 문맥만 보내고 API 인증값은 `http.auth.env`로 Bridge에 주입한다. redirect, 임의 destination과 임의 header는 허용하지 않는다.
 
+## Windows WPF 분석 프로그램 연결
+
+`.NET 8` SDK는 기존 WPF 분석 엔진을 직접 호출하는 static Capability adapter를 제공한다.
+차트에서 구간 선택이 끝나면 앱은 opaque log ID, dataset revision, selection ID/revision과
+범위만 Context로 갱신한다. 통계, downsampled series, 추출 section, anomaly 후보와
+최대 200줄의 제한된 원문은 각각 별도 read-only Capability로 제공한다.
+
+```powershell
+dotnet build .\sdk-dotnet\Relu.AI.Bridge.DesktopConnector.sln -c Release
+```
+
+Server registry 시작점은
+[`config/android-log-viewer.desktop.service.example.json`](config/android-log-viewer.desktop.service.example.json),
+application 연결 시작점은
+[`examples/wpf-android-log-viewer/ReluWpfIntegration.cs`](examples/wpf-android-log-viewer/ReluWpfIntegration.cs)다.
+Desktop endpoint는 `Origin`이 있는 upgrade를 거부하고 app ID·stable instance ID·fresh
+nonce에 묶인 mutual HMAC을 검증한다. `bindingFields`는 dataset 단위 persistent 승인을,
+별도 `executionGuardFields`는 선택 변경 직전 차단을 담당하므로 같은 dataset의 새 구간을
+분석할 때 “항상 허용”을 반복해서 묻지 않는다.
+
+각 Capability 결과는 배열 원소별이 아니라 직렬화한 **전체 JSON 결과**가
+`connectors.maxResultBytes` 상한을 통과해야 한다. 따라서 줄·point·section별 상한과
+전체 결과 byte 상한을 함께 지키고, 큰 결과는 filter·downsample·aggregate한다.
+
+전체 위협 모델, 앱 재시작, secret, WPF event 연결과 검증 방법은
+[Windows Desktop Connector 및 WPF 통합 설계](docs/DESKTOP_CONNECTOR_KO.md)를 따른다.
+
 ## 승인 편의성과 경계
 
 첫 보호 호출은 `APPROVAL_REQUIRED`를 반환한다. Admin에서 결정한 뒤 **같은 tool call을 다시 실행**한다.
 
+아래에서 connector peer는 browser의 server-observed exact Origin 또는 allowlist의
+desktop app ID에서 도출한 `relu-desktop://<sha256>` opaque trust-domain key를 뜻한다.
+승인과 mutation 원장에는 desktop app ID 원문 대신 이 peer를 넣고, 별도의
+page/application-instance binding으로 실제 탭·application instance를 묶는다.
+
 - `한 번`: 같은 scope와 정확한 argument digest에 한 번
 - `현재 세션`: 같은 Claude/Codex MCP session과 exact scope가 유지되는 동안
-- `항상 허용`: 같은 service, exact Origin, page/resource binding, connector version, Capability transport/schema/effect/policy epoch에 대해 재호출 허용
+- `항상 허용`: 같은 service, connector peer, page/application-instance 및 resource binding, connector version, Capability transport/schema/effect/policy epoch에 대해 재호출 허용
 - `거부`: 현재 pending 요청 거부
 - `철회`: 저장된 grant 즉시 삭제
 
-`항상 허용`은 다른 서비스, 다른 탭, 다른 payload/document/account, 바뀐 schema/effect 또는 임의 파일/명령 권한으로 확대되지 않는다. 파일 grant에는 canonical root/protected-path 정책 지문, 명령 grant에는 그 root와 정규화된 profile 전체 지문이 포함되므로 같은 이름의 대상이나 profile을 바꿔도 재승인이 필요하다. 보안상 페이지를 새로 로드하거나 `bindingFields`가 바뀌면 다시 승인한다. 반복 작업 중에는 한 번 승인으로 계속 사용할 수 있고, 모든 grant는 로컬 UI에서 철회된다.
+`항상 허용`은 다른 서비스, connector peer, page/application instance, payload/document/account, 바뀐 schema/effect 또는 임의 파일/명령 권한으로 확대되지 않는다. 파일 grant에는 canonical root/protected-path 정책 지문, 명령 grant에는 그 root와 정규화된 profile 전체 지문이 포함되므로 같은 이름의 대상이나 profile을 바꿔도 재승인이 필요하다. Browser page를 새로 로드하거나 `bindingFields`가 바뀌면 다시 승인한다. Desktop은 같은 stable application-instance binding과 dataset resource를 인증한 정상 재시작에서만 기존 persistent grant를 유지한다. 반복 작업 중에는 한 번 승인으로 계속 사용할 수 있고, 모든 grant는 로컬 UI에서 철회된다.
 
-변경 작업은 8~128자의 `operationId`가 필요하다. 원장은 service+Origin+resource+capability 단위로 `connector-operations.json`에 mode 0600으로 저장되어 다른 탭과 재시작 뒤에도 중복 실행을 막는다. Timeout이나 연결 종료로 결과가 모호하면 자동 재시도하지 않으며 `/admin/`에서 실제 서비스 상태를 확인한 뒤 별도 once 승인을 거쳐 `적용됨` 또는 `미적용`으로 판정한다.
+변경 작업은 8~128자의 `operationId`가 필요하다. 원장은 service+connector peer+resource+capability 단위로 `connector-operations.json`에 mode 0600으로 저장되어 다른 탭과 재시작 뒤에도 중복 실행을 막는다. Timeout이나 연결 종료로 결과가 모호하면 자동 재시도하지 않으며 `/admin/`에서 실제 서비스 상태를 확인한 뒤 별도 once 승인을 거쳐 `적용됨` 또는 `미적용`으로 판정한다.
 
 `connectors.policyEpoch`는 모든 Connector 승인과 mutation ID의 정책 세대를 함께
 바꾸는 단조 증가 값이다. 원장이 비어 있지 않은 상태에서 이를 올릴 때는 Bridge를
@@ -211,8 +259,17 @@ REF와 DUT trace를 별도 탭에서 열고 `/admin/`에서 session에 배정한
 
 ```bash
 node ./scripts/check-syntax.mjs
+node ./scripts/skills/manage-skills.mjs verify-source
 node --test
+dotnet build ./sdk-dotnet/Relu.AI.Bridge.DesktopConnector.sln -c Release -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
+dotnet run --project ./sdk-dotnet/tests/Relu.AI.Bridge.DesktopConnector.Tests/Relu.AI.Bridge.DesktopConnector.Tests.csproj -c Release -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
+dotnet build ./examples/wpf-android-log-viewer/WpfAndroidLogViewer.Integration.csproj -c Release -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
+dotnet pack ./sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj -c Release --no-build --output /absolute/release-output/nuget -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false -p:Version=0.4.0 -p:PackageVersion=0.4.0
 ```
+
+Release/NuGet 공급은 상위 MSBuild 파일이 없는 격리 root에서 수행하고 package inventory,
+nuspec ID/version/빈 dependency group과 SHA-256을
+[사내 동기화 가이드](docs/INTERNAL_SYNC_KO.md#sdk와-skill-사내-배포)대로 기록한다.
 
 Perfetto overlay 변경 후:
 
@@ -240,7 +297,7 @@ scripts/perfetto/build-test.sh --build /absolute/work/perfetto-v57.2
 - Context와 도구 결과를 Claude/Codex가 읽으면 선택한 모델 서비스로 전달될 수 있으므로 회사 AI 정책을 적용한다.
 - Context와 connector 결과는 기본 audit/session 파일에 저장하지 않는다. token·authorization·raw 결과도 기록하지 않는다.
 - 운영 metadata audit는 기본 활성화하지만 자동 ChatGPT 대화 원문 기록은 기본 비활성이다. 명시적 Goal/handoff만 별도 private 상태로 보존한다.
-- `active`는 브라우저가 자체 보고한 정렬용 hint일 뿐이다. 변경 대상을 active 하나만 보고 자동 선택하지 않는다.
+- `active`는 connector가 자체 보고한 정렬용 hint일 뿐이다. 변경 대상을 active 하나만 보고 자동 선택하지 않는다.
 - Mutation 원장에는 raw argument/result 대신 operation ID, argument hash, opaque resource binding과 상태만 저장한다.
 - HTTP Data Plane은 설정에 고정된 endpoint만 지원하며 30x redirect를 따르지 않는다.
 - Perfetto alignment confidence는 진단값이지 production 정답 보증이 아니다.
@@ -252,6 +309,8 @@ scripts/perfetto/build-test.sh --build /absolute/work/perfetto-v57.2
 
 - [아키텍처](docs/ARCHITECTURE.md)
 - [커넥터 개발](docs/CONNECTOR_DEVELOPMENT_KO.md)
+- [Windows Desktop Connector·WPF 통합](docs/DESKTOP_CONNECTOR_KO.md)
+- [Claude/Codex 분석 Skill](docs/SKILLS_KO.md)
 - [보안 모델](docs/SECURITY.md)
 - [MCP 도구](docs/TOOLS.md)
 - [Claude 설정](docs/CLAUDE_SETUP_KO.md)

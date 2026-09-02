@@ -111,8 +111,13 @@ git -c log.showSignature=false -C "$PERFETTO_PROJECT_ROOT" log --topo-order \
 git -C "$PERFETTO_PROJECT_ROOT" cat-file -p "$tag_ref" \
   > "$stage_dir/tag-metadata.txt"
 git -c core.quotePath=true -C "$PERFETTO_PROJECT_ROOT" ls-tree -r "$release_tag" -- \
-  package.json package-lock.json npm-shrinkwrap.json pnpm-lock.yaml yarn.lock \
+  package.json sdk/package.json package-lock.json npm-shrinkwrap.json pnpm-lock.yaml yarn.lock \
   requirements.txt requirements.lock pyproject.toml uv.lock Cargo.toml Cargo.lock \
+  sdk-dotnet/Relu.AI.Bridge.DesktopConnector.sln \
+  sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj \
+  sdk-dotnet/tests/Relu.AI.Bridge.DesktopConnector.Tests/Relu.AI.Bridge.DesktopConnector.Tests.csproj \
+  examples/wpf-android-log-viewer/WpfAndroidLogViewer.Integration.csproj \
+  skills/manifest.json \
   > "$stage_dir/dependency-manifest.txt"
 
 bundle_sha=$(sha256_file "$stage_dir/$bundle_name")

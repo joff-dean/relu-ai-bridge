@@ -75,8 +75,13 @@ create_external_drift_release_fixture() {
     > "$output_dir/history-inventory.txt"
   git -C "$repository" cat-file -p "$tag_ref" > "$output_dir/tag-metadata.txt"
   git -c core.quotePath=true -C "$repository" ls-tree -r "$tag" -- \
-    package.json package-lock.json npm-shrinkwrap.json pnpm-lock.yaml yarn.lock \
+    package.json sdk/package.json package-lock.json npm-shrinkwrap.json pnpm-lock.yaml yarn.lock \
     requirements.txt requirements.lock pyproject.toml uv.lock Cargo.toml Cargo.lock \
+    sdk-dotnet/Relu.AI.Bridge.DesktopConnector.sln \
+    sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj \
+    sdk-dotnet/tests/Relu.AI.Bridge.DesktopConnector.Tests/Relu.AI.Bridge.DesktopConnector.Tests.csproj \
+    examples/wpf-android-log-viewer/WpfAndroidLogViewer.Integration.csproj \
+    skills/manifest.json \
     > "$output_dir/dependency-manifest.txt"
 
   python3 - "$base_manifest" "$output_dir/release-manifest.json" \
@@ -161,10 +166,10 @@ git init --bare -q "$test_root/mirror.git"
 "$fixture/scripts/perfetto/import-release.sh" \
   "$release_dir" "$test_root/mirror.git" >/dev/null
 
-# 릴리스 경계 검사가 root/SDK/extension/plugin/MCP/health version drift를 놓치지
+# 릴리스 경계 검사가 root/SDK/extension/plugin/MCP/health/web/.NET version drift를 놓치지
 # 않는지 각각 회귀 검증한다. Source fixture는 올바른 값을 주석에 남겨 단순 문자열
 # 검색이 실제 선언 drift를 가리는 경우도 함께 재현한다.
-for version_drift_case in root sdk extension plugin mcp health; do
+for version_drift_case in root sdk extension plugin mcp health web-default dotnet-default dotnet-default-decoy dotnet-version-namespace dotnet-package-override dotnet-directory-override; do
   version_drift_repo="$test_root/version-drift-$version_drift_case"
   case "$version_drift_case" in
     root)
@@ -197,6 +202,36 @@ for version_drift_case in root sdk extension plugin mcp health; do
       version_drift_label='health identity'
       version_drift_kind=source
       ;;
+    web-default)
+      version_drift_path=sdk/relu-web-connector.js
+      version_drift_label='web connector default version'
+      version_drift_kind=source
+      ;;
+    dotnet-default)
+      version_drift_path=sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluDesktopConnectorOptions.cs
+      version_drift_label='.NET connector default version'
+      version_drift_kind=source
+      ;;
+    dotnet-default-decoy)
+      version_drift_path=sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluDesktopConnectorOptions.cs
+      version_drift_label='.NET connector version declaration count'
+      version_drift_kind=source
+      ;;
+    dotnet-version-namespace)
+      version_drift_path=sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj
+      version_drift_label='.NET SDK version'
+      version_drift_kind=source
+      ;;
+    dotnet-package-override)
+      version_drift_path=sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj
+      version_drift_label='.NET SDK forbidden override: PackageVersion'
+      version_drift_kind=source
+      ;;
+    dotnet-directory-override)
+      version_drift_path=sdk-dotnet/Directory.Build.props
+      version_drift_label='.NET SDK Directory.Build override'
+      version_drift_kind=new-source
+      ;;
   esac
   git clone --quiet --no-hardlinks "$fixture" "$version_drift_repo"
   git -C "$version_drift_repo" config user.name 'RELU Release Smoke'
@@ -210,6 +245,13 @@ import sys
 path = pathlib.Path(sys.argv[1])
 case = sys.argv[2]
 version = sys.argv[3]
+if case == "dotnet-directory-override":
+    path.write_text(
+        "<Project><PropertyGroup><PackageVersion>9.9.9</PackageVersion>"
+        "</PropertyGroup></Project>\n",
+        encoding="utf-8",
+    )
+    raise SystemExit(0)
 if case in {"root", "sdk", "extension"}:
     value = json.loads(path.read_text(encoding="utf-8"))
     value["version"] = "9.9.9"
@@ -233,6 +275,35 @@ else:
             "        name: 'relu-ai-bridge',\n"
             f"        version: '{version}',\n"
             "        */",
+        ),
+        "web-default": (
+            f"    this.connectorVersion = String(options.connectorVersion ?? '{version}');",
+            "    this.connectorVersion = String(options.connectorVersion ?? '9.9.9');\n"
+            f"    // this.connectorVersion = String(options.connectorVersion ?? '{version}');",
+        ),
+        "dotnet-default": (
+            f'    public string ConnectorVersion {{ get; init; }} = "{version}";',
+            '    public string ConnectorVersion { get; init; } = "9.9.9";\n'
+            "    /*\n"
+            f'    public string ConnectorVersion {{ get; init; }} = "{version}";\n'
+            "    */",
+        ),
+        "dotnet-default-decoy": (
+            f'    public string ConnectorVersion {{ get; init; }} = "{version}";',
+            '    public string ConnectorVersion { get; init; } = "9.9.9";\n\n'
+            "    private sealed class VersionGateDecoy\n"
+            "    {\n"
+            f'        public string ConnectorVersion {{ get; init; }} = "{version}";\n'
+            "    }",
+        ),
+        "dotnet-package-override": (
+            f"    <Version>{version}</Version>",
+            f"    <Version>{version}</Version>\n"
+            "    <PackageVersion>9.9.9</PackageVersion>",
+        ),
+        "dotnet-version-namespace": (
+            f"    <Version>{version}</Version>",
+            f'    <Version xmlns="urn:relu-version-decoy">{version}</Version>',
         ),
     }
     before, after = replacements[case]

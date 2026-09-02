@@ -2,6 +2,12 @@ node_modules/
 .DS_Store
 coverage/
 dist/
+sdk-dotnet/**/bin/
+sdk-dotnet/**/obj/
+examples/wpf-android-log-viewer/bin/
+examples/wpf-android-log-viewer/obj/
+/.claude/skills/relu-analyze-selection/
+/.agents/skills/relu-analyze-selection/
 config/local.json
 *.log
 .relu-ai-bridge/

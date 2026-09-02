@@ -253,7 +253,7 @@ test('a port-squatting fake bridge cannot obtain token or context without a vali
   assert.equal(initWire.includes(options.token), false);
   assert.equal(initWire.includes('case-1'), false);
   socket.receive(serverChallenge(socket, { proof: '0'.repeat(64) }));
-  await tick();
+  await waitFor(() => connector.state === 'rejected', 'forged server proof was not rejected');
 
   assert.equal(connector.state, 'rejected');
   assert.equal(socket.closeCode, 1008);
@@ -275,7 +275,7 @@ test('auth challenge audience changes and replay are rejected fail-closed', asyn
     const socket = FakeWebSocket.instances.at(-1);
     socket.open();
     socket.receive(serverChallenge(socket, override));
-    await tick();
+    await waitFor(() => connector.state === 'rejected', 'changed authentication binding was not rejected');
     assert.equal(connector.state, 'rejected');
     assert.equal(socket.closeCode, 1008);
     assert.deepEqual(socket.sent.map((message) => message.type), ['auth_init']);
@@ -290,7 +290,7 @@ test('auth challenge audience changes and replay are rejected fail-closed', asyn
   socket.receive(challenge);
   await waitFor(() => socket.sent.some((item) => item.type === 'auth_response'), 'proof was not sent');
   socket.receive(challenge);
-  await tick();
+  await waitFor(() => connector.state === 'rejected', 'replayed challenge was not rejected');
   assert.equal(connector.state, 'rejected');
   assert.equal(socket.closeCode, 1008);
   assert.equal(socket.sent.filter((item) => item.type === 'auth_response').length, 1);

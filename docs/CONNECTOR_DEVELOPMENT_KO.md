@@ -1,6 +1,6 @@
 # RELU 커넥터 개발 가이드
 
-이 문서는 기존 사내 웹서비스를 RELU AI Bridge에 연결하는 표준 절차다. 목표는 각 서비스에 LLM이나 MCP server를 새로 넣는 것이 아니라, 공통 SDK와 작은 service adapter만 추가하는 것이다.
+이 문서는 기존 사내 웹서비스 또는 Windows 분석 프로그램을 RELU AI Bridge에 연결하는 표준 절차다. 목표는 각 서비스에 LLM이나 MCP server를 새로 넣는 것이 아니라, 공통 SDK와 작은 service adapter만 추가하는 것이다.
 
 ## SDK를 사내 서비스에 공급하는 방법
 
@@ -10,7 +10,7 @@ publish하지 않는다. 검증된 RELU release와 SDK version을 함께 고정�
 
 - 사내 registry: 보안 검토한 release의 `sdk/`만 내부 packaging 저장소로 복사하고,
   회사 scope/name을 확정한 사내 manifest에서만 `private`를 제거해 내부 registry에
-  publish한다. 서비스 lockfile은 정확한 `0.3.0` artifact digest를 고정한다.
+  publish한다. 서비스 lockfile은 정확한 `0.4.0` artifact digest를 고정한다.
 - vendoring: 서비스 저장소의 `vendor/relu-ai-connector/`에 검토한 `sdk/` 파일을
   복사하고 `"@company/relu-ai-connector": "file:./vendor/relu-ai-connector"`처럼
   상대 file dependency를 사용한다.
@@ -26,8 +26,8 @@ publish하지 않는다. 검증된 RELU release와 SDK version을 함께 고정�
 | 질문 | Context Plane | Data Plane |
 | --- | --- | --- |
 | 무엇을 전달하는가 | 현재 payload/document/issue의 opaque ID, 선택 범위, view 종류 | 통계, 검색 결과, 문서 일부 같은 실제 조회 결과 |
-| 방향 | Browser → Bridge | Bridge → browser handler 또는 고정 API |
-| 저장 | 메모리만, 탭 종료 시 제거 | 기본 audit/session에 저장하지 않음 |
+| 방향 | Browser/desktop → Bridge | Bridge → browser/desktop handler 또는 고정 API |
+| 저장 | 메모리만, 연결 종료 시 제거 | 기본 audit/session에 저장하지 않음 |
 | 권한 | context read 승인 | capability별 승인 |
 
 Context에는 원문 로그, access token, cookie, 사용자 account, 전체 문서를 넣지 않는다. 가능한 한 서버가 다시 조회할 수 있는 opaque reference와 화면 선택만 보낸다.
@@ -41,6 +41,7 @@ Context에는 원문 로그, access token, cookie, 사용자 account, 전체 문
   "id": "llm-wiki",
   "displayName": "LLM Wiki",
   "tokenEnv": "RELU_WIKI_CONNECTOR_TOKEN",
+  "clientKinds": ["browser"],
   "origins": ["https://wiki.internal.example"],
   "bindingFields": ["documentId"],
   "contextSchema": {
@@ -60,6 +61,11 @@ Context에는 원문 로그, access token, cookie, 사용자 account, 전체 문
 
 - `id`는 소문자 영문으로 시작하고 영문·숫자·`_`·`-`만 사용한다.
 - `origins`는 wildcard가 아니라 scheme, host, port가 모두 일치하는 origin이다.
+- `clientKinds`에는 `browser` 또는 `desktop` 중 정확히 하나만 둔다.
+  `clientKinds:["browser"]`는 exact `origins`, `clientKinds:["desktop"]`는 exact
+  `desktopAppIds` 하나를 사용한다. 같은 논리 서비스라도 transport와 Desktop app마다
+  service ID/token을 분리한다. Desktop service에는 `desktop` Capability만 둘 수 있고
+  고정 HTTP Data Plane이 필요하면 별도 browser/HTTP service로 등록한다.
 - 각 서비스는 별도 `tokenEnv`를 사용한다. Control/MCP token을 재사용하지 않는다.
 - `bindingFields`에는 document/payload/account처럼 권한과 mutation 중복 방지를 결정하는 필수 top-level Context 필드를 1~8개 지정한다.
 - 모든 object schema는 `additionalProperties:false`다.
@@ -100,7 +106,11 @@ click(selector)
 | `data_mutation` | 서버 데이터 변경 | 충분한 review/idempotency 뒤에만 |
 | `external_side_effect` | 메시지·배포 등 외부 효과 | 초기에는 사용하지 않음 |
 
-브라우저가 인증 뒤 registration에 보내는 Capability 목록은 구현 가능 여부를 나타내는 교집합 자료일 뿐이다. 이름, schema, effect, endpoint와 timeout은 모두 서버 config가 최종 권한 원본이다.
+Browser/desktop client가 인증 뒤 registration에 보내는 Capability 목록은 구현 가능 여부를 나타내는 교집합 자료일 뿐이다. 이름, schema, effect, endpoint와 timeout은 모두 서버 config가 최종 권한 원본이다.
+
+Capability 결과에는 schema의 row·line·section별 상한과 별도로 직렬화한 전체 JSON의
+`connectors.maxResultBytes` 합산 상한이 적용된다. 큰 결과는 여러 무제한 배열로
+나누지 말고 filter·pagination·downsample·aggregate 계약을 명시한다.
 
 ## 3. Browser Data Plane
 
@@ -185,7 +195,43 @@ Bridge core와 SDK의 인증 protocol은 같은 RELU release로 배포한다. �
 SDK/새 Bridge 조합은 인증에 실패하므로, 사내 canary에서 두 artifact의 digest를 함께
 검증한 뒤 같은 변경 창에 배포한다.
 
-## 4. HTTP Data Plane
+## 4. Desktop Data Plane
+
+WPF 같은 Windows 프로그램은 `sdk-dotnet/`의 .NET 8 SDK를 사용한다. Exact
+`/relu/desktop/ws`는 `Origin`이 있는 browser upgrade를 거부하고 service/app/instance와
+fresh nonce에 묶인 mutual HMAC을 먼저 검증한다. UI control tree, screen capture,
+reflection 또는 임의 assembly 대신 기존 application/domain service를 정적 Capability
+handler로 연결한다.
+
+Desktop registry에서는 persistent resource와 빠르게 바뀌는 실행 대상을 분리한다.
+
+```json
+{
+  "clientKinds": ["desktop"],
+  "origins": [],
+  "desktopAppIds": ["com.relu.AndroidLogViewer"],
+  "bindingFields": ["logResourceId", "datasetRevision"],
+  "executionGuardFields": [
+    "logResourceId",
+    "datasetRevision",
+    "selectionId",
+    "selectionRevision",
+    "selection"
+  ]
+}
+```
+
+이렇게 하면 같은 dataset에 대한 `항상 허용`은 유지하면서 승인 대기나 handler 실행
+중 selection ID/revision 또는 전체 `selection` 범위가 바뀐 요청은 거부한다.
+`executionGuardFields`는 모두 required top-level
+Context property여야 한다. 기존 browser service가 이 필드를 생략하면 하위호환을 위해
+더 엄격한 전체 Context version guard가 적용된다.
+
+SDK 적용, stable instance ID, memory-only resume secret, WPF ViewModel와 read-only
+Android 로그 Capability 예제는 [Desktop Connector·WPF 통합 설계](DESKTOP_CONNECTOR_KO.md)를
+따른다.
+
+## 5. HTTP Data Plane
 
 Wiki, Issue DB, Log Server처럼 기존 API가 있으면 브라우저를 거치지 않고 Bridge가 정확한 endpoint에 호출한다.
 
@@ -236,7 +282,7 @@ Wiki, Issue DB, Log Server처럼 기존 API가 있으면 브라우저를 거치�
 - HTTP endpoint가 꼭 필요하지 않으면 browser Capability보다 HTTP proxy를 추가하지 않는다.
 - 사내 개발 HTTP가 필요할 때만 전체 `connectors.allowInsecureHttp:true`를 명시하고, production에서는 HTTPS로 되돌린다.
 
-## 5. Token 배포
+## 6. Token 배포
 
 ```bash
 node scripts/generate-token.mjs connector
@@ -247,21 +293,28 @@ node scripts/generate-token.mjs connector
 1. 서비스마다 다른 token을 발급한다.
 2. Bridge host에는 secret manager로 `tokenEnv` 값을 주입한다.
 3. 웹서비스에는 승인된 runtime config 또는 사용자별 local enrollment로 전달한다.
+   Desktop app은 Windows Credential Manager나 회사 Secret Agent 경계를 사용한다.
 4. source, Git, query string, browser `localStorage`, audit에 저장하지 않는다.
 5. 유출이 의심되면 서비스 token만 회전하고 Bridge를 재시작한다.
 
 Connector token은 `/mcp`, `/bridge/approvals`, `/api/v1/*`의 인증에 사용할 수 없다. Control token으로도 connector client HMAC proof를 만들 수 없다.
 
-## 6. 승인 UX
+## 7. 승인 UX
 
 사용자는 `/admin/`에서 Capability의 service, effect, opaque session key, argument digest를 보고 승인한다.
 
+승인 scope의 connector peer는 browser의 server-observed exact Origin 또는 allowlist의
+desktop app ID에서 도출한 `relu-desktop://<sha256>` opaque trust-domain key다. Desktop
+app ID 원문과 stable instance ID 원문을 scope·원장에 넣지 않으며, 별도의
+page/application-instance binding이 실제 탭 또는 application instance를 묶는다.
+
 - 반복 조회는 `현재 세션` 또는 `항상 허용`으로 매번 묻지 않게 할 수 있다.
-- schema, effect, Origin, page/resource binding, connector version 또는 `policyEpoch`가 바뀌면 새 scope가 되어 다시 승인한다.
+- schema, effect, connector peer, page/application-instance 및 resource binding, execution guard mode/field,
+  connector version 또는 `policyEpoch`가 바뀌면 새 scope가 되어 다시 승인한다.
 - UI/data mutation은 `operationId` 없이는 dispatch하지 않는다.
 - mutation timeout/실패 응답/invalid result는 결과가 모호한 상태다. 자동 retry나 새 탭 우회를 하지 말고 `/admin/`의 변경 작업 원장에서 실제 서비스 상태를 확인한 뒤 별도 local approval로 판정한다.
 
-## 7. 검증 체크리스트
+## 8. 검증 체크리스트
 
 서비스를 반입하기 전에 다음을 자동화한다.
 
@@ -279,10 +332,17 @@ Connector token은 `/mcp`, `/bridge/approvals`, `/api/v1/*`의 인증에 사용�
 - 같은 resource를 연 두 탭과 process 재시작 뒤에도 operationId/ambiguous ledger가 우회되지 않음
 - 승인 직후 host Context만 바뀐 경우 SDK handler 실행 횟수가 0임
 - 서비스 reload/계정 전환 후 이전 approval가 자동 승계되지 않음
+- Desktop endpoint의 모든 Origin/query 거부, app/instance/audience swap과 outer/inner
+  duplicate JSON key 거부
+- Desktop 앱 재시작은 live 동일 identity가 없을 때만 resume record 회전, 동시 takeover 거부
+- Explicit selection guard 변경은 stale handler를 막고 `executionGuardFields` 미지정 browser context update도 계속 차단
 
 Repository 검증:
 
 ```bash
 node ./scripts/check-syntax.mjs
 node --test test/config.test.mjs test/connectors.test.mjs test/sdk.test.mjs
+dotnet build ./sdk-dotnet/Relu.AI.Bridge.DesktopConnector.sln -c Release -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
+dotnet run --project ./sdk-dotnet/tests/Relu.AI.Bridge.DesktopConnector.Tests/Relu.AI.Bridge.DesktopConnector.Tests.csproj -c Release -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
+dotnet build ./examples/wpf-android-log-viewer/WpfAndroidLogViewer.Integration.csproj -c Release -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
 ```

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "suite": "relu-ai-bridge-analysis-skills",
+  "suiteVersion": "0.1.0",
+  "skills": [
+    {
+      "name": "relu-analyze-selection",
+      "directory": "relu-analyze-selection",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "037bec10d8d14a27e175858dbc6ee8ec02c148530d0fce54a19ecc84e9ab8892",
+          "bytes": 3887
+        },
+        {
+          "path": "references/android-log-viewer.md",
+          "sha256": "fb51fd9708816fab2fff57e84d7fd487c3c3a7e2558ec4a272d488ac8a733c0c",
+          "bytes": 3043
+        },
+        {
+          "path": "references/perfetto.md",
+          "sha256": "718e6179ce5f699024cf2799fe32938e3fdcdc6e0c69987ec0aed647b3906935",
+          "bytes": 2906
+        },
+        {
+          "path": "references/report-format.md",
+          "sha256": "944f25458ccf3c8be5f0897e141619f25c5584516e4cfdfb612d585cd41a19a6",
+          "bytes": 1838
+        }
+      ]
+    }
+  ]
+}

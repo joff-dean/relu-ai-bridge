@@ -1,6 +1,6 @@
 # ChatGPT·Codex MCP 연결
 
-RELU AI Bridge는 Streamable HTTP MCP endpoint를 제공한다. 기본 지원 경로는 Claude이며, 이 문서는 선택적으로 Codex/ChatGPT를 연결할 때 사용한다.
+RELU AI Bridge는 browser/desktop 분석 session을 노출하는 Streamable HTTP MCP endpoint를 제공한다. 기본 지원 경로는 Claude이며, 이 문서는 선택적으로 Codex/ChatGPT를 연결할 때 사용한다.
 
 ```text
 URL:            http://127.0.0.1:5746/mcp
@@ -13,6 +13,7 @@ Admin:          http://127.0.0.1:5746/admin/
 OpenAI 공식 문서 기준으로 local Codex client는 Streamable HTTP와 bearer token을 지원하며, ChatGPT web의 hosted chat은 로컬 Codex 설정을 직접 읽지 않는다. 사내/private MCP를 ChatGPT web에 연결할 때는 public ingress를 직접 만들지 말고 Secure MCP Tunnel을 사용한다.
 
 - [Codex MCP 설정](https://learn.chatgpt.com/docs/extend/mcp)
+- [Codex Skills 만들기](https://learn.chatgpt.com/ko-KR/docs/build-skills)
 - [MCP and Connectors](https://developers.openai.com/api/docs/guides/tools-connectors-mcp)
 - [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)
 
@@ -93,6 +94,20 @@ default_tools_approval_mode = "writes"
 
 플랫폼 승인과 이 프로젝트의 local approval은 별개다. 반복 작업에는 플랫폼에서 지원하는 approval mode와 local admin의 `항상 허용`을 각각 필요한 scope에만 설정한다.
 
+현재 Perfetto/WPF 선택 구간의 분석 절차도 함께 쓰려면 project scope Skill을 설치한다.
+
+```bash
+./scripts/skills/install-skills.sh \
+  --scope project --target codex --project-root /absolute/path/to/analysis-project
+./scripts/skills/verify-skills.sh \
+  --scope project --target codex --project-root /absolute/path/to/analysis-project
+```
+
+설치 위치는 `<project>/.agents/skills/relu-analyze-selection`이다. User scope와 Windows
+PowerShell 명령, checksum/갱신/제거 계약은 [분석 Skill 설계](SKILLS_KO.md)를 따른다.
+Skill은 권한을 추가하거나 승인을 대신하지 않고 live `list_capabilities`만 실행 계약으로
+사용한다.
+
 ## 2B. ChatGPT web/Work 연결
 
 ChatGPT web은 `~/.codex/config.toml`과 local command menu를 사용하지 않는다. 다음 구조를 사용한다.
@@ -158,6 +173,11 @@ Token을 입력한 뒤 다음 중 하나를 고른다.
 - `항상 허용`: 같은 scope를 재시작 후에도 허용
 - `거부`: pending request 거부
 
+Scope의 connector peer는 browser의 server-observed exact Origin 또는 allowlist의
+desktop app ID에서 도출한 `relu-desktop://<sha256>` opaque trust-domain key다. 별도의
+page/application-instance binding과 `bindingFields` resource도 scope에 결합되므로
+다른 탭·desktop 설치·dataset으로 권한이 확장되지 않는다.
+
 승인 후 원래 MCP tool call을 다시 실행한다. 영구 grant는 같은 화면에서 철회한다.
 
 ## 문제 해결
@@ -185,7 +205,7 @@ Token을 입력한 뒤 다음 중 하나를 고른다.
 
 ### RELU session이 0개
 
-웹서비스가 주 config의 `connectors.services`에 등록됐는지, exact Origin과 service별 `tokenEnv`가 맞는지, 서비스 SDK status가 connected인지 확인한다. Service token은 control token과 달라야 한다.
+Browser/desktop 서비스가 주 config의 `connectors.services`에 등록됐는지, exact Origin 또는 app ID와 service별 `tokenEnv`가 맞는지, SDK status가 connected인지 확인한다. Service token은 control token과 달라야 한다.
 
 ### Perfetto client가 0개
 

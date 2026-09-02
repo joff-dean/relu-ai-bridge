@@ -4,8 +4,10 @@
 
 1. **RELU core**: Node.js MCP/Context/Data/approval server
 2. **Web Connector SDK**: 각 사내 웹서비스 build에 포함하는 작은 ESM package
-3. **Service registry**: 내부 Origin/schema/endpoint/env 이름을 포함한 company-only config
-4. **Perfetto Connector #1 overlay**: plugin과 `PerfettoAdapterV57`을 포함해 빌드한 UI
+3. **.NET Desktop Connector SDK**: Windows 분석 프로그램에 포함하는 net8.0 library
+4. **Analysis Skill suite**: Claude/Codex에 복사하는 checksum inventory와 Markdown
+5. **Service registry**: 내부 Origin/app ID/schema/endpoint/env 이름을 포함한 company-only config
+6. **Perfetto Connector #1 overlay**: plugin과 `PerfettoAdapterV57`을 포함해 빌드한 UI
 
 외부 release에는 회사 hostname, credential과 company fork diff를 넣지 않는다. Immutable internal mirror에 반입한 뒤 integration repo가 service registry와 overlay를 결합한다.
 
@@ -13,6 +15,7 @@
 
 ```text
 Managed browser ── service token ──┐
+Windows analyzer ─ desktop token ──┤
                                   ▼
 Claude/Codex ── control token ── RELU @ loopback
                                   │
@@ -57,6 +60,7 @@ Service마다:
 RELU_BATTERY_CONNECTOR_TOKEN=<browser connector secret>
 RELU_WIKI_CONNECTOR_TOKEN=<browser connector secret>
 RELU_WIKI_API_AUTHORIZATION=<Bridge-to-API credential>
+RELU_ANDROID_LOG_VIEWER_TOKEN=<desktop connector secret>
 ```
 
 Control, Perfetto, service, API credential은 모두 서로 달라야 한다. Launch argument와 일반 shell history보다 secret manager, systemd credential, managed wrapper를 사용한다.
@@ -106,12 +110,41 @@ node C:\Company\relu-ai-bridge\bin\relu-ai-bridge.mjs serve
 
 `RELU_AI_BRIDGE_CONFIG`, `RELU_AI_BRIDGE_TOKEN`, `RELU_PERFETTO_CONNECTOR_TOKEN`과 service/API credential은 승인된 Windows credential solution에서 주입한다. Perfetto overlay/release Bash script는 WSL 또는 승인된 Linux worker를 사용한다.
 
+WPF Connector를 배포하는 장비에서는 .NET 8 SDK/runtime compatibility를 사전 검증하고
+같은 RELU release의 `sdk-dotnet/`을 사내 NuGet registry 또는 source reference로 고정한다.
+상위 `Directory.Build.props/targets`가 없는 승인된 격리 root에서 실행하고 자동 import도
+명시적으로 끈다.
+
+```powershell
+dotnet build C:\Company\relu-ai-bridge\sdk-dotnet\Relu.AI.Bridge.DesktopConnector.sln -c Release `
+  -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
+dotnet run --project C:\Company\relu-ai-bridge\sdk-dotnet\tests\Relu.AI.Bridge.DesktopConnector.Tests\Relu.AI.Bridge.DesktopConnector.Tests.csproj -c Release `
+  -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
+dotnet build C:\Company\relu-ai-bridge\examples\wpf-android-log-viewer\WpfAndroidLogViewer.Integration.csproj -c Release `
+  -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
+dotnet pack C:\Company\relu-ai-bridge\sdk-dotnet\src\Relu.AI.Bridge.DesktopConnector\Relu.AI.Bridge.DesktopConnector.csproj -c Release --no-build --output C:\Company\release-out\nuget `
+  -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false `
+  -p:Version=0.4.0 -p:PackageVersion=0.4.0
+powershell.exe -NoProfile -File C:\Company\relu-ai-bridge\scripts\skills\install-skills.ps1 `
+  -Scope project -Target both -ProjectPath C:\Work\AndroidAnalysis
+powershell.exe -NoProfile -File C:\Company\relu-ai-bridge\scripts\skills\verify-skills.ps1 `
+  -Scope project -Target both -ProjectPath C:\Work\AndroidAnalysis
+```
+
+Feed publish 전 package inventory, nuspec의 exact ID/version과 빈 dependency group,
+SHA-256을 [사내 동기화 가이드](INTERNAL_SYNC_KO.md#sdk와-skill-사내-배포)대로 확인한다.
+
+Stable application instance ID는 token과 분리한 current-user ACL의 app data로 관리한다.
+Resume secret은 process memory 밖에 저장하지 않는다. Desktop endpoint, WPF integration과
+Skill 공급 경계는 [Desktop Connector 설계](DESKTOP_CONNECTOR_KO.md)와
+[Skill 설계](SKILLS_KO.md)를 따른다.
+
 ## Connector rollout
 
-1. Registry schema와 exact Origin을 review한다.
+1. Registry schema와 browser exact Origin 또는 desktop exact app ID 하나를 review한다.
 2. Service 전용 connector token을 생성한다.
 3. Read-only Capability만 활성화한다.
-4. Synthetic data와 `node --test test/connectors.test.mjs` 패턴으로 token/origin/schema/timeout을 검증한다.
+4. Synthetic data와 `node --test test/connectors.test.mjs` 패턴으로 token/Origin 또는 app identity/schema/timeout을 검증한다.
 5. 소수 사용자 canary에서 `/admin/`의 session/approval 흐름을 확인한다.
 6. Context/result가 audit/dataDir에 저장되지 않는지 marker scan한다.
 7. 필요할 때 좁은 UI mutation을 `operationId`와 함께 추가한다.
@@ -127,6 +160,11 @@ Registry의 schema/effect hash가 바뀐 Capability는 자체적으로 재승인
 operation key/ID에 모두 들어간다. 값을 올리면 모든 Connector grant가 무효화되고,
 보관된 이전 세대와 분리된 새 operation ID namespace가 열린다. 값은 장비별로 **단조
 증가**해야 하며 rollback에서도 낮추지 않는다.
+
+승인·원장에서 connector peer는 browser의 server-observed exact Origin 또는 desktop
+app ID에서 도출한 `relu-desktop://<sha256>` opaque trust-domain key다. 원장 JSON의
+호환 필드명은 `origin`이지만 desktop record에 app ID 원문을 저장하지 않는다. 별도의
+page/application-instance binding과 `bindingFields` resource가 실제 대상을 묶는다.
 
 원장이 비어 있지 않으면 다음 승인된 변경 절차를 사용한다.
 
@@ -162,7 +200,7 @@ fallback한다.
 출력되는 SHA-256은 archive 파일 자체의 byte hash가 아니라 보관된 ledger JSON의
 canonical content digest다. Archive 경로, `N → 새 epoch`, record 수와 digest를 접근
 통제된 변경 티켓/감사 시스템에 저장한 후 Bridge를 재시작하고 기존 grant가 다시
-요청되는지 확인한다. Archive에는 raw argument/result는 없지만 service/Origin,
+요청되는지 확인한다. Archive에는 raw argument/result는 없지만 service/connector peer,
 capability, operation ID, hash와 timestamp metadata가 있으므로 `dataDir`과 같은 등급으로
 보호하고 retention 정책을 적용한다.
 
@@ -198,13 +236,16 @@ scripts/perfetto/build-test.sh --all-tests /absolute/work/perfetto-v57.2
 
 1. RELU core tag/commit과 release manifest/hash 검증
 2. `node ./scripts/check-syntax.mjs && node --test`
-3. Control/Perfetto/service token cross-audience 401/WS 거부 확인
-4. Registry input/output schema와 effect/policyEpoch diff review
-5. Service별 bounded load/timeout/AbortSignal test
-6. once/session/always/deny/revoke와 reload isolation test
-7. Exact Perfetto v57.2 overlay unit/type/build test
-8. Internal manifest에 core/connector/company target full SHA 기록
-9. Read-only canary 후 production 확대
+3. `manage-skills.mjs verify-source`와 Claude/Codex 임시 project 설치·검증·제거
+4. `.NET 8` Release build, shared desktop HMAC vector test, `net8.0-windows` WPF 예제
+   build와 NuGet pack/README/LICENSE inventory 검사
+5. Control/Perfetto/browser/desktop service token cross-audience 401/WS 거부 확인
+6. Registry input/output schema, execution guard와 effect/policyEpoch diff review
+7. Service별 bounded load/timeout/cancellation test
+8. once/session/always/deny/revoke와 browser reload/desktop restart isolation test
+9. Exact Perfetto v57.2 overlay unit/type/build test
+10. Internal manifest에 core/connector/company target full SHA 기록
+11. Read-only canary 후 production 확대
 
 ## Rollback
 

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
+import net from 'node:net';
 import test from 'node:test';
 import { ConnectorBroker } from '../src/connectors.mjs';
 import {
@@ -33,6 +34,7 @@ class FakeConnection extends EventEmitter {
 const emptyObject = { type: 'object', properties: {}, required: [], additionalProperties: false };
 const serviceToken = 'battery_connector_token_1234567890';
 const genericAuthAudience = 'relu-ai-bridge://loopback/relu/ws';
+const desktopAuthAudience = 'relu-ai-bridge://loopback/relu/desktop/ws';
 
 function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
@@ -52,6 +54,25 @@ function authPayload(role, serviceId, origin, clientNonce, serverNonce, registra
 function authProof(token, role, serviceId, origin, clientNonce, serverNonce, registrationDigest = '') {
   return crypto.createHmac('sha256', token)
     .update(authPayload(role, serviceId, origin, clientNonce, serverNonce, registrationDigest))
+    .digest('hex');
+}
+
+function desktopAuthPayload(
+  role, serviceId, appId, instanceId, clientNonce, serverNonce, registrationDigest = '',
+) {
+  return stableJson([
+    'RELU_DESKTOP_CONNECTOR_AUTH', '1.0', desktopAuthAudience, role,
+    serviceId, appId, instanceId, clientNonce, serverNonce, registrationDigest,
+  ]);
+}
+
+function desktopAuthProof(
+  token, role, serviceId, appId, instanceId, clientNonce, serverNonce, registrationDigest = '',
+) {
+  return crypto.createHmac('sha256', token)
+    .update(desktopAuthPayload(
+      role, serviceId, appId, instanceId, clientNonce, serverNonce, registrationDigest,
+    ))
     .digest('hex');
 }
 
@@ -97,6 +118,58 @@ function batteryService(overrides = {}) {
     ],
     ...overrides,
   };
+}
+
+function desktopService(overrides = {}) {
+  return batteryService({
+    id: 'android-log-viewer',
+    displayName: 'Android Log Viewer',
+    token: 'desktop_connector_token_1234567890',
+    tokenEnv: 'RELU_ANDROID_LOG_VIEWER_TOKEN',
+    clientKinds: ['desktop'],
+    origins: [],
+    desktopAppIds: ['com.relu.AndroidLogViewer'],
+    bindingFields: ['logResourceId', 'datasetRevision'],
+    executionGuardFields: ['logResourceId', 'datasetRevision', 'selectionRevision'],
+    contextSchema: {
+      type: 'object',
+      properties: {
+        logResourceId: { type: 'string', maxLength: 128 },
+        datasetRevision: { type: 'string', maxLength: 128 },
+        selectionRevision: { type: 'string', maxLength: 128 },
+        view: { type: 'string', maxLength: 64 },
+        label: { type: 'string', maxLength: 128 },
+        sampleRate: { type: 'number', minimum: 0, maximum: 1000000 },
+      },
+      required: ['logResourceId', 'datasetRevision', 'selectionRevision', 'view'],
+      additionalProperties: false,
+    },
+    capabilities: [{
+      name: 'get_selection_stats', description: 'Get selected range statistics',
+      transport: 'desktop', readOnly: true, effect: 'read',
+      inputSchema: emptyObject,
+      outputSchema: {
+        type: 'object', properties: { count: { type: 'integer', minimum: 0, maximum: 100000 } },
+        required: ['count'], additionalProperties: false,
+      },
+    }, {
+      name: 'focus_range', description: 'Focus a range', transport: 'desktop',
+      readOnly: false, effect: 'ui_mutation',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          start: { type: 'integer', minimum: 0, maximum: 100000 },
+          end: { type: 'integer', minimum: 0, maximum: 100000 },
+        },
+        required: ['start', 'end'], additionalProperties: false,
+      },
+      outputSchema: {
+        type: 'object', properties: { focused: { type: 'boolean' } },
+        required: ['focused'], additionalProperties: false,
+      },
+    }],
+    ...overrides,
+  });
 }
 
 function configure(env, services = [batteryService()]) {
@@ -146,12 +219,129 @@ function hello(connection, overrides = {}) {
   return challenge;
 }
 
+function desktopRegistration(overrides = {}) {
+  return {
+    client: {
+      serviceId: 'android-log-viewer', clientKind: 'desktop',
+      appId: 'com.relu.AndroidLogViewer', instanceId: 'wpf_instance_one',
+      connectorVersion: '0.4.0', capabilities: ['get_selection_stats', 'focus_range'],
+    },
+    context: {
+      logResourceId: 'log-001', datasetRevision: 'rev-42',
+      selectionRevision: 'selection-1', view: 'timeline',
+    },
+    active: true,
+    ...overrides,
+  };
+}
+
+function beginDesktopAuth(
+  connection,
+  { serviceId = 'android-log-viewer', appId = 'com.relu.AndroidLogViewer', instanceId = 'wpf_instance_one',
+    clientNonce = crypto.randomBytes(32).toString('hex'), audience = desktopAuthAudience } = {},
+) {
+  const sentBefore = connection.sent.length;
+  connection.emit('message', JSON.stringify({
+    type: 'auth_init', protocolVersion: '1.0', serviceId, clientKind: 'desktop',
+    appId, instanceId, audience, clientNonce,
+  }));
+  return { challenge: connection.sent[sentBefore] ?? null, clientNonce, sentBefore };
+}
+
+function desktopAuthResponse(challenge, registration, token = 'desktop_connector_token_1234567890') {
+  const { serviceId, appId, instanceId } = registration.client;
+  const registrationJson = JSON.stringify(registration);
+  const registrationDigest = crypto.createHash('sha256').update(registrationJson).digest('hex');
+  return {
+    type: 'auth_response', protocolVersion: '1.0', serviceId, clientKind: 'desktop',
+    appId, instanceId, audience: desktopAuthAudience,
+    clientNonce: challenge.clientNonce, serverNonce: challenge.serverNonce, registrationJson,
+    proof: desktopAuthProof(
+      token, 'client', serviceId, appId, instanceId,
+      challenge.clientNonce, challenge.serverNonce, registrationDigest,
+    ),
+  };
+}
+
+function desktopRawAuthResponse(
+  challenge, registrationJson,
+  { token = 'desktop_connector_token_1234567890', serviceId = 'android-log-viewer',
+    appId = 'com.relu.AndroidLogViewer', instanceId = 'wpf_instance_one' } = {},
+) {
+  const registrationDigest = crypto.createHash('sha256').update(registrationJson).digest('hex');
+  return {
+    type: 'auth_response', protocolVersion: '1.0', serviceId, clientKind: 'desktop',
+    appId, instanceId, audience: desktopAuthAudience,
+    clientNonce: challenge.clientNonce, serverNonce: challenge.serverNonce, registrationJson,
+    proof: desktopAuthProof(
+      token, 'client', serviceId, appId, instanceId,
+      challenge.clientNonce, challenge.serverNonce, registrationDigest,
+    ),
+  };
+}
+
+function withDuplicateOuterField(value, field) {
+  const serialized = JSON.stringify(value);
+  return `{${JSON.stringify(field)}:${JSON.stringify(value[field])},${serialized.slice(1)}`;
+}
+
+function desktopHello(connection, overrides = {}) {
+  const { token = 'desktop_connector_token_1234567890', ...registrationOverrides } = overrides;
+  const registration = desktopRegistration(registrationOverrides);
+  const { challenge, sentBefore } = beginDesktopAuth(connection, {
+    serviceId: registration.client.serviceId,
+    appId: registration.client.appId,
+    instanceId: registration.client.instanceId,
+  });
+  if (challenge?.type !== 'auth_challenge') return null;
+  connection.sent.splice(sentBefore, 1);
+  connection.emit('message', JSON.stringify(desktopAuthResponse(challenge, registration, token)));
+  return challenge;
+}
+
 function tick() {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
 function settle() {
   return new Promise((resolve) => setTimeout(resolve, 20));
+}
+
+function rawUpgrade(port, pathname, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect({ host: '127.0.0.1', port });
+    let response = '';
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error('Timed out waiting for WebSocket upgrade response'));
+    }, 2_000);
+    socket.once('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    socket.once('connect', () => {
+      const requestHeaders = {
+        Host: `127.0.0.1:${port}`,
+        Upgrade: 'websocket',
+        Connection: 'Upgrade',
+        'Sec-WebSocket-Version': '13',
+        'Sec-WebSocket-Key': Buffer.alloc(16, 7).toString('base64'),
+        ...headers,
+      };
+      socket.write([
+        `GET ${pathname} HTTP/1.1`,
+        ...Object.entries(requestHeaders).map(([name, value]) => `${name}: ${value}`),
+        '', '',
+      ].join('\r\n'));
+    });
+    socket.on('data', (chunk) => {
+      response += chunk.toString('utf8');
+      if (!response.includes('\r\n\r\n')) return;
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(response);
+    });
+  });
 }
 
 async function waitForRequest(connection, previousId = null) {
@@ -350,6 +540,439 @@ test('generic connector uses fresh audience-bound mutual proofs and never sends 
   assert.notEqual(otherChallenge.serverNonce, challenge.serverNonce);
 });
 
+test('desktop connector auth compatibility vector is stable across implementations', async () => {
+  const vector = JSON.parse(await fs.readFile(
+    new URL('../compat/desktop-auth-v1.json', import.meta.url), 'utf8',
+  ));
+  assert.equal(stableJson(vector.registration), vector.registrationJson);
+  assert.equal(
+    crypto.createHash('sha256').update(vector.registrationJson).digest('hex'),
+    vector.registrationDigest,
+  );
+  assert.equal(desktopAuthPayload(
+    'server', vector.serviceId, vector.appId, vector.instanceId,
+    vector.clientNonce, vector.serverNonce,
+  ), vector.serverPayload);
+  assert.equal(desktopAuthProof(
+    vector.token, 'server', vector.serviceId, vector.appId, vector.instanceId,
+    vector.clientNonce, vector.serverNonce,
+  ), vector.serverProof);
+  assert.equal(desktopAuthPayload(
+    'client', vector.serviceId, vector.appId, vector.instanceId,
+    vector.clientNonce, vector.serverNonce, vector.registrationDigest,
+  ), vector.clientPayload);
+  assert.equal(desktopAuthProof(
+    vector.token, 'client', vector.serviceId, vector.appId, vector.instanceId,
+    vector.clientNonce, vector.serverNonce, vector.registrationDigest,
+  ), vector.clientProof);
+  for (const edge of vector.rawRegistrationCases) {
+    const digest = crypto.createHash('sha256').update(edge.registrationJson).digest('hex');
+    assert.equal(digest, edge.registrationDigest, edge.name);
+    assert.equal(desktopAuthPayload(
+      'client', vector.serviceId, vector.appId, vector.instanceId,
+      vector.clientNonce, vector.serverNonce, digest,
+    ), edge.clientPayload, edge.name);
+    assert.equal(desktopAuthProof(
+      vector.token, 'client', vector.serviceId, vector.appId, vector.instanceId,
+      vector.clientNonce, vector.serverNonce, digest,
+    ), edge.clientProof, edge.name);
+  }
+});
+
+test('desktop connector uses a dedicated app and instance bound mutual-HMAC transcript', async (t) => {
+  const env = await fixture();
+  configure(env, [desktopService()]);
+  const app = await createApplication({ config: env.config });
+  t.after(async () => { await app.close(); await env.cleanup(); });
+
+  const connection = new FakeConnection();
+  app.context.connectors.accept(connection, { clientKind: 'desktop' });
+  const { challenge, clientNonce } = beginDesktopAuth(connection);
+  assert.deepEqual(new Set(Object.keys(challenge)), new Set([
+    'type', 'protocolVersion', 'serviceId', 'clientKind', 'appId', 'instanceId',
+    'audience', 'clientNonce', 'serverNonce', 'proof',
+  ]));
+  assert.equal(challenge.clientKind, 'desktop');
+  assert.equal(challenge.audience, desktopAuthAudience);
+  assert.equal(challenge.appId, 'com.relu.AndroidLogViewer');
+  assert.equal(challenge.instanceId, 'wpf_instance_one');
+  assert.equal(challenge.proof, desktopAuthProof(
+    desktopService().token, 'server', desktopService().id,
+    'com.relu.AndroidLogViewer', 'wpf_instance_one', clientNonce, challenge.serverNonce,
+  ));
+  assert.equal(JSON.stringify(challenge).includes(desktopService().token), false);
+  assert.equal(JSON.stringify(challenge).includes('log-001'), false);
+
+  connection.emit('message', JSON.stringify(desktopAuthResponse(challenge, desktopRegistration())));
+  await waitForHelloAck(connection);
+  const [session] = app.context.connectors.listSessions();
+  assert.equal(session.clientKind, 'desktop');
+  assert.equal(session.appId, 'com.relu.AndroidLogViewer');
+  assert.equal(session.clientKey, session.pageKey);
+  assert.deepEqual(session.capabilities, ['get_selection_stats', 'focus_range']);
+  assert.doesNotMatch(JSON.stringify(connection.sent), new RegExp(desktopService().token, 'u'));
+
+  const replay = new FakeConnection();
+  app.context.connectors.accept(replay, { clientKind: 'desktop' });
+  beginDesktopAuth(replay);
+  replay.emit('message', JSON.stringify(desktopAuthResponse(challenge, desktopRegistration({
+    client: { ...desktopRegistration().client, instanceId: 'wpf_replay_other' },
+  }))));
+  await settle();
+  assert.equal(replay.closed, true);
+  assert.equal(app.context.connectors.listSessions().length, 1);
+});
+
+test('desktop registrationJson binds exact UTF-8 bytes without cross-language number or escape canonicalization', async (t) => {
+  const env = await fixture();
+  configure(env, [desktopService()]);
+  const app = await createApplication({ config: env.config });
+  t.after(async () => { await app.close(); await env.cleanup(); });
+
+  const instanceId = 'wpf_noncanonical_json';
+  const connection = new FakeConnection();
+  app.context.connectors.accept(connection, { clientKind: 'desktop' });
+  const challenge = beginDesktopAuth(connection, { instanceId }).challenge;
+  const client = {
+    ...desktopRegistration().client,
+    instanceId,
+  };
+  const registrationJson = [
+    '{',
+    '  "context": {"sampleRate":1e3,"label":"\\uBD84\\uC11D","view":"timeline",',
+    '    "selectionRevision":"selection-1","datasetRevision":"rev-42","logResourceId":"log-001"},',
+    `  "client": ${JSON.stringify(client)},`,
+    '  "active": true',
+    '}',
+  ].join('\n');
+  connection.emit('message', JSON.stringify(desktopRawAuthResponse(
+    challenge, registrationJson, { instanceId },
+  )));
+  await waitForHelloAck(connection);
+  const sessionId = app.context.connectors.listSessions()[0].id;
+  const context = app.context.connectors.getContext(sessionId).context;
+  assert.equal(context.label, '분석');
+  assert.equal(context.sampleRate, 1000);
+});
+
+test('desktop app restart rotates an in-memory resume secret only after the old session is gone', async (t) => {
+  const env = await fixture();
+  configure(env, [desktopService()]);
+  const app = await createApplication({ config: env.config });
+  t.after(async () => { await app.close(); await env.cleanup(); });
+
+  const first = new FakeConnection();
+  app.context.connectors.accept(first, { clientKind: 'desktop' });
+  desktopHello(first);
+  const firstAck = await waitForHelloAck(first);
+  const firstSessionId = firstAck.sessionId;
+  const firstSecret = firstAck.resumeSecret;
+  first.close(1000, 'desktop app exited');
+  await tick();
+  assert.equal(app.context.connectors.listSessions().length, 0);
+
+  const restarted = new FakeConnection();
+  app.context.connectors.accept(restarted, { clientKind: 'desktop' });
+  desktopHello(restarted);
+  const restartAck = await waitForHelloAck(restarted);
+  assert.equal(restartAck.sessionId, firstSessionId);
+  assert.notEqual(restartAck.resumeSecret, firstSecret);
+  assert.equal(app.context.connectors.listSessions().length, 1);
+
+  const takeover = new FakeConnection();
+  app.context.connectors.accept(takeover, { clientKind: 'desktop' });
+  desktopHello(takeover);
+  await settle();
+  assert.equal(takeover.closed, true);
+  assert.equal(takeover.sent.some((message) => message.type === 'hello_ack' && message.accepted), false);
+  assert.equal(app.context.connectors.listSessions()[0].id, firstSessionId);
+
+  const authenticatedReconnect = new FakeConnection();
+  app.context.connectors.accept(authenticatedReconnect, { clientKind: 'desktop' });
+  desktopHello(authenticatedReconnect, {
+    client: { ...desktopRegistration().client, resumeSecret: restartAck.resumeSecret },
+  });
+  const reconnectAck = await waitForHelloAck(authenticatedReconnect);
+  assert.equal(reconnectAck.sessionId, firstSessionId);
+  assert.equal(restarted.closed, true);
+});
+
+test('desktop connector rejects Origin, wrong audience, unallowlisted apps, and identity tampering', async (t) => {
+  const env = await fixture();
+  configure(env, [desktopService()]);
+  const app = await createApplication({ config: env.config });
+  t.after(async () => { await app.close(); await env.cleanup(); });
+
+  for (const input of [
+    { metadata: { clientKind: 'desktop', origin: 'https://battery.internal.example' }, init: {} },
+    { metadata: { clientKind: 'desktop' }, init: { audience: 'relu-ai-bridge://loopback/relu/ws' } },
+    { metadata: { clientKind: 'desktop' }, init: { appId: 'com.attacker.LogViewer' } },
+  ]) {
+    const connection = new FakeConnection();
+    app.context.connectors.accept(connection, input.metadata);
+    beginDesktopAuth(connection, input.init);
+    await settle();
+    assert.equal(connection.closed, true);
+    assert.equal(connection.sent.length, 0);
+  }
+
+  const tampered = new FakeConnection();
+  app.context.connectors.accept(tampered, { clientKind: 'desktop' });
+  const challenge = beginDesktopAuth(tampered).challenge;
+  const response = desktopAuthResponse(challenge, desktopRegistration());
+  response.registrationJson = response.registrationJson.replace(
+    'com.relu.AndroidLogViewer', 'com.relu.OtherViewer',
+  );
+  tampered.emit('message', JSON.stringify(response));
+  await settle();
+  assert.equal(tampered.closed, true);
+  assert.equal(app.context.connectors.listSessions().length, 0);
+
+  const duplicate = new FakeConnection();
+  const instanceId = 'wpf_duplicate_json';
+  app.context.connectors.accept(duplicate, { clientKind: 'desktop' });
+  const duplicateChallenge = beginDesktopAuth(duplicate, { instanceId }).challenge;
+  const duplicateRegistration = desktopRegistration({
+    client: { ...desktopRegistration().client, instanceId },
+  });
+  const duplicateJson = JSON.stringify(duplicateRegistration).replace('{', '{"active":false,');
+  duplicate.emit('message', JSON.stringify(desktopRawAuthResponse(
+    duplicateChallenge, duplicateJson, { instanceId },
+  )));
+  await settle();
+  assert.equal(duplicate.closed, true);
+  assert.equal(app.context.connectors.listSessions().length, 0);
+});
+
+test('desktop connector rejects duplicate identity and proof keys in the outer WebSocket envelope', async (t) => {
+  const env = await fixture();
+  configure(env, [desktopService()]);
+  const app = await createApplication({ config: env.config });
+  t.after(async () => { await app.close(); await env.cleanup(); });
+
+  const duplicateInit = new FakeConnection();
+  app.context.connectors.accept(duplicateInit, { clientKind: 'desktop' });
+  const init = {
+    type: 'auth_init', protocolVersion: '1.0', serviceId: 'android-log-viewer',
+    clientKind: 'desktop', appId: 'com.relu.AndroidLogViewer', instanceId: 'wpf_duplicate_init',
+    audience: desktopAuthAudience, clientNonce: crypto.randomBytes(32).toString('hex'),
+  };
+  duplicateInit.emit('message', withDuplicateOuterField(init, 'serviceId'));
+  await settle();
+  assert.equal(duplicateInit.closed, true);
+  assert.equal(duplicateInit.sent.length, 0);
+
+  for (const field of ['appId', 'proof', 'registrationJson']) {
+    const instanceId = `wpf_duplicate_${field.toLowerCase()}`;
+    const connection = new FakeConnection();
+    app.context.connectors.accept(connection, { clientKind: 'desktop' });
+    const challenge = beginDesktopAuth(connection, { instanceId }).challenge;
+    const registration = desktopRegistration({
+      client: { ...desktopRegistration().client, instanceId },
+    });
+    const response = desktopAuthResponse(challenge, registration);
+    connection.emit('message', withDuplicateOuterField(response, field));
+    await settle();
+    assert.equal(connection.closed, true, field);
+    assert.equal(
+      connection.sent.some((message) => message.type === 'hello_ack' && message.accepted),
+      false,
+      field,
+    );
+  }
+  assert.equal(app.context.connectors.listSessions().length, 0);
+});
+
+test('desktop resource approvals persist across guarded selection changes while stale dispatch fails closed', async (t) => {
+  const env = await fixture();
+  configure(env, [desktopService()]);
+  const app = await createApplication({ config: env.config });
+  t.after(async () => { await app.close(); await env.cleanup(); });
+  const connection = new FakeConnection();
+  app.context.connectors.accept(connection, { clientKind: 'desktop' });
+  desktopHello(connection);
+  await waitForHelloAck(connection);
+  const sessionId = app.context.connectors.listSessions()[0].id;
+  const requestContext = { mcpSessionId: 'mcp_desktop_binding' };
+
+  const blocked = await app.context.mcp.callTool('execute', {
+    sessionId, action: 'get_selection_stats', parameters: {},
+  }, requestContext);
+  assert.equal(blocked.structuredContent.error, 'APPROVAL_REQUIRED');
+  await app.context.approvals.decide(blocked.structuredContent.approval.id, 'always');
+  const firstExecution = app.context.mcp.callTool('execute', {
+    sessionId, action: 'get_selection_stats', parameters: {},
+  }, requestContext);
+  const firstRequest = await waitForRequest(connection);
+  assert.deepEqual(firstRequest.contextGuard.fields, [
+    'logResourceId', 'datasetRevision', 'selectionRevision',
+  ]);
+  assert.deepEqual(firstRequest.contextGuard.projection, {
+    logResourceId: 'log-001', datasetRevision: 'rev-42', selectionRevision: 'selection-1',
+  });
+  connection.emit('message', JSON.stringify({
+    type: 'response', id: firstRequest.id, ok: true, result: { count: 7 },
+  }));
+  assert.deepEqual((await firstExecution).structuredContent, { count: 7 });
+
+  const stalePrepared = app.context.connectors.prepareExecution(sessionId, 'get_selection_stats', {});
+  const beforeSelection = stalePrepared.snapshot;
+  connection.emit('message', JSON.stringify({
+    type: 'event', event: 'context.update',
+    context: {
+      logResourceId: 'log-001', datasetRevision: 'rev-42',
+      selectionRevision: 'selection-2', view: 'timeline',
+    },
+    active: true,
+  }));
+  await tick();
+  const afterSelection = app.context.connectors.createSnapshot(sessionId, 'get_selection_stats');
+  assert.equal(afterSelection.contextBinding, beforeSelection.contextBinding);
+  assert.notEqual(afterSelection.executionBinding, beforeSelection.executionBinding);
+  await assert.rejects(
+    () => app.context.connectors.executePrepared(stalePrepared),
+    /changed after approval|execution guard changed/u,
+  );
+
+  const secondExecution = app.context.mcp.callTool('execute', {
+    sessionId, action: 'get_selection_stats', parameters: {},
+  }, requestContext);
+  const secondRequest = await waitForRequest(connection, firstRequest.id);
+  assert.equal(secondRequest.contextGuard.projection.selectionRevision, 'selection-2');
+  connection.emit('message', JSON.stringify({
+    type: 'response', id: secondRequest.id, ok: true, result: { count: 9 },
+  }));
+  assert.deepEqual((await secondExecution).structuredContent, { count: 9 });
+
+  const viewOnlyPrepared = app.context.connectors.prepareExecution(sessionId, 'get_selection_stats', {});
+  connection.emit('message', JSON.stringify({
+    type: 'event', event: 'context.update',
+    context: {
+      logResourceId: 'log-001', datasetRevision: 'rev-42',
+      selectionRevision: 'selection-2', view: 'details',
+    },
+    active: true,
+  }));
+  await tick();
+  const viewOnlyExecution = app.context.connectors.executePrepared(viewOnlyPrepared);
+  const viewOnlyRequest = await waitForRequest(connection, secondRequest.id);
+  connection.emit('message', JSON.stringify({
+    type: 'response', id: viewOnlyRequest.id, ok: true, result: { count: 10 },
+  }));
+  assert.deepEqual(await viewOnlyExecution, { count: 10 });
+
+  connection.emit('message', JSON.stringify({
+    type: 'event', event: 'context.update',
+    context: {
+      logResourceId: 'log-002', datasetRevision: 'rev-1',
+      selectionRevision: 'selection-1', view: 'timeline',
+    },
+    active: true,
+  }));
+  await tick();
+  const changedResource = await app.context.mcp.callTool('execute', {
+    sessionId, action: 'get_selection_stats', parameters: {},
+  }, requestContext);
+  assert.equal(changedResource.structuredContent.error, 'APPROVAL_REQUIRED');
+});
+
+test('desktop connector exposes only fixed allowlisted failure guidance', async (t) => {
+  const env = await fixture();
+  configure(env, [desktopService()]);
+  const app = await createApplication({ config: env.config });
+  t.after(async () => { await app.close(); await env.cleanup(); });
+  const connection = new FakeConnection();
+  app.context.connectors.accept(connection, { clientKind: 'desktop' });
+  desktopHello(connection);
+  await waitForHelloAck(connection);
+  const sessionId = app.context.connectors.listSessions()[0].id;
+  const requestContext = { mcpSessionId: 'mcp_desktop_failure_code' };
+
+  const blocked = await app.context.mcp.callTool('execute', {
+    sessionId, action: 'get_selection_stats', parameters: {},
+  }, requestContext);
+  await app.context.approvals.decide(blocked.structuredContent.approval.id, 'always');
+
+  const staleCall = app.context.mcp.callTool('execute', {
+    sessionId, action: 'get_selection_stats', parameters: {},
+  }, requestContext);
+  const staleRequest = await waitForRequest(connection);
+  connection.emit('message', JSON.stringify({
+    type: 'response', id: staleRequest.id, ok: false,
+    errorCode: 'CONTEXT_CHANGED', error: 'sensitive/raw/log/line',
+  }));
+  const staleResult = await staleCall;
+  assert.equal(staleResult.structuredContent.error, 'TOOL_ERROR');
+  assert.match(staleResult.structuredContent.message, /call get_context and retry/u);
+  assert.doesNotMatch(staleResult.structuredContent.message, /sensitive|raw|log/u);
+
+  const untrustedCall = app.context.mcp.callTool('execute', {
+    sessionId, action: 'get_selection_stats', parameters: {},
+  }, requestContext);
+  const untrustedRequest = await waitForRequest(connection, staleRequest.id);
+  connection.emit('message', JSON.stringify({
+    type: 'response', id: untrustedRequest.id, ok: false,
+    errorCode: 'ATTACKER_CONTROLLED', error: 'sensitive/raw/log/line',
+  }));
+  const untrustedResult = await untrustedCall;
+  assert.equal(untrustedResult.structuredContent.message, 'Connector action failed');
+});
+
+test('desktop mutation ledger persists its opaque app peer and validates it after restart', async (t) => {
+  const env = await fixture();
+  configure(env, [desktopService()]);
+  let first = await createApplication({ config: env.config });
+  let second = null;
+  t.after(async () => { await second?.close(); await first?.close(); await env.cleanup(); });
+
+  const connection = new FakeConnection();
+  first.context.connectors.accept(connection, { clientKind: 'desktop' });
+  desktopHello(connection);
+  await waitForHelloAck(connection);
+  const sessionId = first.context.connectors.listSessions()[0].id;
+  const outcome = first.context.connectors.execute(
+    sessionId, 'focus_range', { start: 10, end: 20 },
+    { operationId: 'desktop-ledger-operation-0001' },
+  );
+  const request = await waitForRequest(connection);
+  connection.emit('message', JSON.stringify({
+    type: 'response', id: request.id, ok: true, result: { focused: true },
+  }));
+  assert.deepEqual(await outcome, { focused: true });
+  await first.close();
+  first = null;
+
+  const ledger = JSON.parse(await fs.readFile(
+    `${env.dataDir}/connector-operations.json`, 'utf8',
+  ));
+  assert.match(ledger.records[0].origin, /^relu-desktop:\/\/[a-f0-9]{64}$/u);
+  assert.equal(ledger.records[0].origin.includes('AndroidLogViewer'), false);
+
+  second = await createApplication({ config: env.config });
+  assert.equal(second.context.connectors.listOperations()[0].status, 'completed');
+});
+
+test('desktop WebSocket endpoint rejects every Origin and query-string path before authentication', async (t) => {
+  const env = await fixture();
+  const app = await createApplication({ config: env.config });
+  const address = await app.listen();
+  t.after(async () => { await app.close(); await env.cleanup(); });
+
+  const browserLike = await rawUpgrade(address.port, '/relu/desktop/ws', {
+    Origin: 'https://battery.internal.example',
+  });
+  assert.match(browserLike, /^HTTP\/1\.1 403 Forbidden/u);
+
+  const nullOrigin = await rawUpgrade(address.port, '/relu/desktop/ws', { Origin: 'null' });
+  assert.match(nullOrigin, /^HTTP\/1\.1 403 Forbidden/u);
+
+  const query = await rawUpgrade(address.port, '/relu/desktop/ws?service=android-log-viewer');
+  assert.match(query, /^HTTP\/1\.1 404 Not Found/u);
+
+  const native = await rawUpgrade(address.port, '/relu/desktop/ws');
+  assert.match(native, /^HTTP\/1\.1 101 Switching Protocols/u);
+});
+
 test('generic connector rejects wrong proofs, tampering, replay, and out-of-order authentication', async (t) => {
   const env = await fixture();
   configure(env);
@@ -448,6 +1071,61 @@ test('generic connector authentication timeout closes without receiving registra
   assert.equal(app.context.connectors.listSessions().length, 0);
 });
 
+test('connector message processing queue is bounded and audits a fatal burst once', async (t) => {
+  const env = await fixture();
+  configure(env);
+  const records = [];
+  const broker = new ConnectorBroker(env.config, {
+    append: async (record) => { records.push(record); },
+  });
+  t.after(async () => { await broker.shutdown(); await env.cleanup(); });
+
+  const connection = new FakeConnection();
+  broker.accept(connection, { origin: 'https://battery.internal.example' });
+  const authInit = JSON.stringify({
+    type: 'auth_init', protocolVersion: '1.0', serviceId: 'battery-viewer',
+    clientNonce: 'a'.repeat(64),
+  });
+  for (let index = 0; index < 64; index += 1) connection.emit('message', authInit);
+  await settle();
+
+  assert.equal(connection.closed, true);
+  assert.equal(connection.closeCode, 1008);
+  assert.equal(connection.sent.length, 1);
+  assert.equal(connection.sent[0].type, 'auth_challenge');
+  assert.equal(broker.listSessions().length, 0);
+  assert.equal(records.filter((record) => record.action === 'session.invalid-message').length, 1);
+});
+
+test('connector message processing queue enforces a byte budget as well as a frame count', async (t) => {
+  const env = await fixture();
+  configure(env);
+  const records = [];
+  const broker = new ConnectorBroker(env.config, {
+    append: async (record) => { records.push(record); },
+  });
+  t.after(async () => { await broker.shutdown(); await env.cleanup(); });
+
+  const connection = new FakeConnection();
+  broker.accept(connection, { origin: 'https://battery.internal.example' });
+  connection.emit('message', JSON.stringify({
+    type: 'auth_init', protocolVersion: '1.0', serviceId: 'battery-viewer',
+    clientNonce: 'b'.repeat(64),
+  }));
+  const largeFrame = JSON.stringify({ padding: 'x'.repeat(800 * 1024) });
+  connection.emit('message', largeFrame);
+  connection.emit('message', largeFrame);
+  connection.emit('message', largeFrame);
+  await settle();
+
+  assert.equal(connection.closed, true);
+  assert.equal(connection.closeCode, 1008);
+  assert.equal(connection.sent.length, 1);
+  assert.equal(connection.sent[0].type, 'auth_challenge');
+  assert.equal(broker.queuedMessageBytes, 0);
+  assert.equal(records.filter((record) => record.action === 'session.invalid-message').length, 1);
+});
+
 test('connector credential and exact service origin are separate from the control token', async (t) => {
   const env = await fixture();
   configure(env, [batteryService(), batteryService({
@@ -512,8 +1190,15 @@ test('generic MCP flow uses scoped approval and validates connector results', as
 
   const invalidPending = app.context.mcp.callTool('execute', { sessionId, action: 'get_stats', parameters: {} });
   const invalidRequest = await waitForRequest(connection, request.id);
-  connection.emit('message', JSON.stringify({ type: 'response', id: invalidRequest.id, ok: true, result: { count: 'many' } }));
-  assert.equal((await invalidPending).structuredContent.error, 'TOOL_ERROR');
+  const connectorControlledKey = '/company/private/raw-log-line';
+  connection.emit('message', JSON.stringify({
+    type: 'response', id: invalidRequest.id, ok: true,
+    result: { count: 'many', [connectorControlledKey]: true },
+  }));
+  const invalidResult = await invalidPending;
+  assert.equal(invalidResult.structuredContent.error, 'TOOL_ERROR');
+  assert.equal(invalidResult.structuredContent.message, 'Connector result violated the configured output contract');
+  assert.equal(JSON.stringify(invalidResult).includes(connectorControlledKey), false);
 });
 
 test('mutating connector capability requires operationId before dispatch', async (t) => {
@@ -600,6 +1285,31 @@ test('persistent approvals follow bindingFields while non-binding view updates r
   await tick();
   const changedResource = await app.context.mcp.callTool('get_context', { sessionId }, { mcpSessionId: 'mcp_binding_test' });
   assert.equal(changedResource.structuredContent.error, 'APPROVAL_REQUIRED');
+});
+
+test('legacy browser services retain strict contextVersion dispatch guards when executionGuardFields is omitted', async (t) => {
+  const env = await fixture();
+  configure(env);
+  const app = await createApplication({ config: env.config });
+  t.after(async () => { await app.close(); await env.cleanup(); });
+  const connection = new FakeConnection();
+  app.context.connectors.accept(connection, { origin: 'https://battery.internal.example' });
+  hello(connection);
+  await waitForHelloAck(connection);
+  const sessionId = app.context.connectors.listSessions()[0].id;
+  const prepared = app.context.connectors.prepareExecution(sessionId, 'get_stats', {});
+  assert.equal(prepared.snapshot.executionGuardMode, 'strict_context_version');
+
+  connection.emit('message', JSON.stringify({
+    type: 'event', event: 'context.update',
+    context: { payloadId: 'case-123', view: 'details' }, active: true,
+  }));
+  await tick();
+  await assert.rejects(
+    () => app.context.connectors.executePrepared(prepared),
+    /context changed after approval/u,
+  );
+  assert.equal(connection.sent.some((item) => item.type === 'request'), false);
 });
 
 test('approval snapshot prevents dispatch after a connector context swap', async (t) => {

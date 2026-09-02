@@ -8,6 +8,7 @@ RELU는 모델, browser content, trace/API 응답과 imported artifact를 모두
 
 - prompt injection을 포함한 모델 입력·출력
 - 손상된 사내 웹페이지 또는 제3자 script
+- 변조되었거나 과도한 Context를 보내는 desktop 분석 application
 - 악성/과대 Context, Capability parameter와 result
 - 유출된 한 서비스의 connector token
 - 응답이 늦거나 취소를 지원하지 않는 Data Plane
@@ -22,9 +23,13 @@ OS account 전체 탈취, 악성 Node binary, 회사 secret manager 자체 침�
 - Server bind는 `127.0.0.1` 또는 `::1`만 허용한다.
 - Host header도 `localhost`, `127.0.0.1`, `[::1]`과 유효 port만 허용한다.
 - `/relu/ws`와 `/perfetto/ws`는 exact Origin이 반드시 있어야 한다.
+- `/relu/desktop/ws`는 반대로 `Origin` header가 하나라도 있으면 거부한다.
 - Generic connector Origin은 service별로 다시 일치시킨다.
 - HTTP control CORS, generic connector Origin, Perfetto Origin은 서로 다른 목록이다.
 - Generic/Perfetto WebSocket은 client/server fresh nonce와 audience·Origin에 묶인 HMAC proof를 먼저 교환한다. Raw connector token은 wire에 보내지 않으며, Context·reconnect secret·Perfetto trace descriptor는 server proof 검증 전에는 보내지 않는다.
+- Desktop WebSocket은 service, 정확한 app ID 하나, stable instance ID, 전용 audience와
+  양쪽 nonce에 묶인 mutual HMAC을 사용한다. Exact UTF-8 registration JSON digest도
+  client proof에 포함하며 outer/inner JSON의 duplicate key를 거부한다.
 - MCP/admin/control API는 Bearer control token이 필요하다.
 - 허용된 Chrome Companion은 요청마다 `/bridge/challenge`의 server proof를 먼저 검증하고 path/method/body digest에 묶인 one-shot client proof를 보낸다. Raw control token은 Companion HTTP request에 포함하지 않는다.
 - HTTP Data Plane은 exact config URL에만 연결하고 redirect를 따르지 않는다.
@@ -48,15 +53,16 @@ sandbox 경계 밖이다. Connector와 packaged Chrome Companion에는 이 잔�
 | `RELU_AI_BRIDGE_TOKEN` | MCP, admin/control API | 모든 connector proof, 외부 API |
 | `perfetto.tokenEnv` | `/perfetto/ws` + exact Perfetto Origin/plugin HMAC proof | MCP, admin, generic service, 외부 API |
 | service `tokenEnv` | 해당 service ID + exact Origin generic HMAC proof | MCP, 승인 API, 다른 service |
+| desktop service `tokenEnv` | 해당 service ID + exact app/instance desktop HMAC proof | MCP, browser/admin, 다른 service/app |
 | HTTP `auth.env` | 해당 고정 Data Plane request header | MCP/browser/result/audit |
 
-Perfetto와 generic service token은 최소 24자이며 audience마다 다르게 발급한다. Token을 Git, config JSON, URL, `localStorage`, transcript와 audit에 넣지 않는다. Perfetto plugin은 전용 token을 setting에 등록하지 않고 현재 페이지의 JavaScript 메모리에만 두므로 reload 뒤 다시 입력해야 한다. Admin UI는 control token을 해당 탭의 `sessionStorage`에, 선택형 Chrome companion은 `chrome.storage.session`에만 두므로 브라우저 재시작 뒤 다시 입력해야 한다. Companion 저장 token은 HMAC key로만 사용되고 bearer 값 자체는 loopback request에 실리지 않는다.
+Perfetto와 generic/desktop service token은 최소 24자이며 audience마다 다르게 발급한다. 하나의 desktop service는 정확한 app ID 하나와 desktop Capability만 허용한다. `clientKinds`에 browser와 desktop을 함께 두거나 desktop Context에 client-side guard가 없는 HTTP Capability를 섞는 설정은 startup에서 거부하며, 여러 app/runtime/HTTP Data Plane은 각각 별도 service ID와 `tokenEnv`를 사용한다. Token을 Git, config JSON, URL, `localStorage`, transcript와 audit에 넣지 않는다. Perfetto plugin은 전용 token을 setting에 등록하지 않고 현재 페이지의 JavaScript 메모리에만 두므로 reload 뒤 다시 입력해야 한다. Desktop resume secret도 process 메모리에만 둔다. Admin UI는 control token을 해당 탭의 `sessionStorage`에, 선택형 Chrome companion은 `chrome.storage.session`에만 두므로 브라우저 재시작 뒤 다시 입력해야 한다. Companion 저장 token은 HMAC key로만 사용되고 bearer 값 자체는 loopback request에 실리지 않는다.
 
 Startup은 Perfetto/service token과 HTTP auth env 값을 normalized in-memory config에 로드해 audience 검사와 redaction에 함께 사용한다. 이 normalized config 객체를 API, 오류, diagnostic dump나 JSON 파일로 직렬화하면 안 된다. Public Capability 변환은 HTTP credential value를 제거한다. Control, Perfetto, generic service, HTTP API와 remote Goal credential은 값과 audience를 재사용할 수 없다.
 
 ## Registry authority와 no-proxy invariant
 
-Capability의 이름, schema, effect, transport, endpoint, method, auth header env, timeout과 concurrency는 server config가 결정한다. Browser는 handler 구현 목록만 알린다.
+Capability의 이름, schema, effect, transport, endpoint, method, auth header env, timeout과 concurrency는 server config가 결정한다. Browser/desktop client는 handler 구현 목록만 알린다.
 
 다음 기능은 의도적으로 없다.
 
@@ -66,6 +72,8 @@ execute_sql(connection, sql)
 run_script(code)
 navigate(url)
 click(selector)
+invoke_reflection(type, method)
+load_assembly(path_or_url)
 read_cookie()
 load_manifest(url)
 ```
@@ -91,6 +99,10 @@ Runtime은 input/context/result 양쪽에 다음 상한을 적용한다.
 - Capability timeout
 - HTTP response stream bytes
 
+`connectors.maxResultBytes`는 row·line·section 각각의 상한이 아니라 직렬화한
+Capability 결과 **전체**의 합산 byte 상한이다. Output schema의 `maxItems`와 각
+string의 `maxLength`는 이 전체 상한을 대체하지 않으며 둘 다 통과해야 한다.
+
 `read`는 integrity effect가 없다는 뜻이지 CPU/availability-safe라는 뜻이 아니다. Connector handler/API도 query cardinality, page size, scan 범위, regex/aggregation과 내부 CPU budget을 별도로 제한해야 한다.
 
 ## 승인
@@ -100,22 +112,36 @@ Runtime은 input/context/result 양쪽에 다음 상한을 적용한다.
 Approval scope tuple:
 
 ```text
-version + kind + connectorId + exact server-observed Origin
-+ random page-instance binding + bindingFields resource binding
+version + kind + connectorId
++ connector peer(browser exact Origin | desktop opaque app trust-domain hash)
++ page/application-instance binding + bindingFields resource binding
 + connector version + capabilityId + transport + fixed HTTP descriptor
 + input/output schema hash + server-owned effect + policyEpoch
++ execution guard mode + fields
 ```
 
 Tuple은 key 정렬 canonical JSON 후 SHA-256으로 scope를 만든다. Delimiter·Unicode 문자열 조립 충돌이나 prefix match를 사용하지 않는다.
+
+여기서 connector peer는 browser의 server-observed exact Origin 또는 allowlist의
+desktop app ID에서 도출한 `relu-desktop://<sha256>` opaque trust-domain key다.
+Desktop app ID 원문은 routing/authentication metadata로만 사용한다. 별도의
+page/application-instance binding이 browser page load 또는 stable desktop instance를
+묶는다.
 
 - `once`: 같은 MCP session의 scope + arguments digest + operation ID가 같은 요청 한 번
 - `session`: pending 생성 시 서버가 검증한 Claude/Codex MCP session ID
 - `always`: exact scope
 - `deny`: grant 없음
 
-Approval decision body가 session ID를 바꿀 수 없다. Pending은 TTL과 총 개수 상한이 있다. `once` grant는 소비와 동시에 제거되고 `session` grant는 MCP session 종료·만료 또는 process 재시작 때 제거된다. Grant는 `/admin/`에서 철회할 수 있다. Schema/effect/Origin/page/resource binding/connector version/policy epoch 변경은 기존 grant를 자동으로 무효화한다. 파일은 canonical root·read-only·protected pattern 정책, command는 해당 root와 정규화된 profile 전체가 scope 지문에 들어가므로 같은 ID/이름으로 설정 대상을 교체해도 영구 grant를 재사용할 수 없다.
+Approval decision body가 session ID를 바꿀 수 없다. Pending은 TTL과 총 개수 상한이 있다. `once` grant는 소비와 동시에 제거되고 `session` grant는 MCP session 종료·만료 또는 process 재시작 때 제거된다. Grant는 `/admin/`에서 철회할 수 있다. Schema/effect/connector peer/page 또는 application-instance/resource binding/connector version/policy epoch 변경은 기존 grant를 자동으로 무효화한다. 파일은 canonical root·read-only·protected pattern 정책, command는 해당 root와 정규화된 profile 전체가 scope 지문에 들어가므로 같은 ID/이름으로 설정 대상을 교체해도 영구 grant를 재사용할 수 없다.
 
-승인 전에 input을 byte/depth/node/schema로 검증하고 target snapshot을 만든다. 승인 뒤에는 같은 connection generation, Context version, page/resource binding과 capability인지 다시 검사한다. Browser request에는 `bindingFields` projection guard가 포함되며 SDK는 handler 호출 직전 live `getContext()`와 비교한다. 불일치하면 handler를 한 번도 실행하지 않고 `CONTEXT_CHANGED`로 거부한다.
+승인 전에 input을 byte/depth/node/schema로 검증하고 target snapshot을 만든다. 승인 뒤에는 같은 connection generation, page/application-instance 및 resource binding과 capability인지 다시 검사한다. `executionGuardFields`를 명시하지 않은 기존 browser service는 모든 Context update에서 pending 실행을 취소하고 exact Context version도 재검사한다. 명시한 service는 별도 execution projection을 검사한다. Outbound request의 `contextGuard`는 SDK가 handler 직전 live Context와 비교하며, desktop SDK는 handler 완료 뒤와 success 전송 gate 안에서도 다시 비교한다. 불일치하면 stale 결과를 정상 결과로 반환하지 않고 connector가 내부 failure code `CONTEXT_CHANGED`로 거부한다. Core는 connector error detail을 MCP에 반사하지 않고 이 allowlist code만 고정 문구 `Connector selection context changed; call get_context and retry`로 변환한다. Unknown code는 일반 `Connector action failed`로, output contract 위반은 고정 문구 `Connector result violated the configured output contract`로 축소한다.
+
+Desktop의 stable application-instance binding과 `bindingFields` resource binding은 같은 dataset에
+대한 persistent grant를 앱 재시작 뒤에도 유지한다. 빠르게 바뀌는 selection 값은 별도
+`executionGuardFields`에 두어 항상 승인의 scope를 selection마다 늘리지 않으면서 stale
+dispatch는 막는다. Guard mode/field 자체도 approval scope에 포함되므로 정책 변경 뒤
+이전 grant를 재사용할 수 없다.
 
 보안 때문에 browser reload는 새 page instance다. 반복 호출 중 `현재 세션` 또는 `항상 허용`은 매번 묻지 않지만 다른 탭·reload에 자동 승계하지 않는다.
 
@@ -123,7 +149,7 @@ Approval decision body가 session ID를 바꿀 수 없다. Pending은 TTL과 총
 
 `ui_mutation`, `data_mutation`, `external_side_effect`에는 안전한 ASCII 8~128자의 `operationId`가 필요하다. HTTP transport에는 `Idempotency-Key`로 전달한다. Bridge와 SDK는 timed-out 요청을 자동 재전송하지 않는다.
 
-Operation key는 탭 ID가 아니라 `policyEpoch + service + Origin + bindingFields resource + capability + operationId`다. Perfetto 선택 변경에서는 exact Origin과 stable trace resource binding이 resource를 구성하며 generic `select_range`, 전용 `perfetto_select_area`, 선택을 반영하는 `perfetto_align`이 같은 원장을 사용한다. 같은 ID/같은 argument는 한 번만 dispatch하고, 같은 ID/다른 argument는 거부한다. Applied alignment는 SQL/DTW 전에 pending을 영속화하므로 concurrent duplicate도 expensive query를 반복하지 않는다. Pending/ambiguous/completed metadata는 private atomic `connector-operations.json`에 저장되며 process 재시작 시 pending은 ambiguous로 복구된다. Raw result는 영속 원장에 저장하지 않고 메모리 결과 cache도 총 16 MiB로 제한한다.
+Operation key는 탭 ID가 아니라 `policyEpoch + service + connector peer + bindingFields resource + capability + operationId`다. Perfetto 선택 변경에서는 exact Origin peer와 stable trace resource binding이 resource를 구성하며 generic `select_range`, 전용 `perfetto_select_area`, 선택을 반영하는 `perfetto_align`이 같은 원장을 사용한다. Desktop record의 peer는 app ID 원문이 아닌 opaque trust-domain hash다. 같은 ID/같은 argument는 한 번만 dispatch하고, 같은 ID/다른 argument는 거부한다. Applied alignment는 SQL/DTW 전에 pending을 영속화하므로 concurrent duplicate도 expensive query를 반복하지 않는다. Pending/ambiguous/completed metadata는 private atomic `connector-operations.json`에 저장되며 process 재시작 시 pending은 ambiguous로 복구된다. Raw result는 영속 원장에 저장하지 않고 메모리 결과 cache도 총 16 MiB로 제한한다.
 
 Perfetto read/query/select/align은 승인 전에 client/trace/connection과 REF/DUT role assignment snapshot을 잡고 승인 직후 다시 검사한다. 같은 client ID가 다른 connection이나 trace로 교체되었거나 durable role이 재배정되면 전송하지 않는다.
 
@@ -141,7 +167,7 @@ Bridge 밖의 변경 티켓에 기록해야 이후 파일 변조를 독립적으
 
 ## Privacy와 audit
 
-Public session list는 service, opaque key, time, Capability 이름만 반환한다. `active`는 browser self-asserted hint이며 authorization이나 mutation target 자동 선택에 사용하지 않는다. Context, title, URL, payload ID와 selection은 `get_context` 승인 뒤에만 반환한다.
+Public session list는 service, opaque key, time, Capability 이름만 반환한다. `active`는 connector self-asserted hint이며 authorization이나 mutation target 자동 선택에 사용하지 않는다. Context, title, URL, payload ID와 selection은 `get_context` 승인 뒤에만 반환한다. Public `clientKind`와 허용된 desktop `appId`는 routing metadata일 뿐 process 서명이나 사용자 신원을 뜻하지 않는다. Stable instance 원문은 노출하지 않고 opaque binding만 반환한다.
 
 기본값:
 
@@ -175,6 +201,35 @@ AI client가 Context/result를 읽으면 그 데이터는 해당 모델 제공�
 Goal evaluator는 기본 `local` 모드이며 completion marker만 확인한다. 명시적으로 `goal.mode:remote`를 켜면 최근 bounded transcript가 설정에 고정된 credential-free HTTPS endpoint로 전송된다. 이 옵션은 별도 회사 승인과 전용 credential이 필요하고 redirect를 따르지 않으며 response도 64 KiB로 제한한다. Control/service/API credential과 같은 값을 재사용할 수 없다.
 
 Bridge의 실제 `configPath`와 `dataDir` 전체는 approved root와 겹치더라도 예약 영역이다. 파일 list/search/read/diff/write 도구는 이 절대 경로를 항상 제외하거나 거부하므로, persistent grant로 설정·승인 원장·세션 상태를 수정해 다음 재시작 권한을 확대할 수 없다.
+
+## Desktop Connector와 Skill 공급 방어
+
+- Desktop endpoint는 explicit loopback과 exact path만 허용하고 query string을 거부한다.
+- App/instance ID는 HMAC transcript와 registration identity에 반복 결합한다.
+- Raw token, full log, file path와 exception detail을 wire/audit에 반사하지 않는다.
+- Context/result는 browser와 같은 byte/depth/node/string/schema 제한을 통과한다.
+- Selection update는 진행 중 request를 취소하고 handler 전후 projection을 비교한다.
+- App이 재시작되어 resume secret을 잃으면 같은 live session이 없을 때만 authenticated
+  stale record를 회전한다. 동시 process takeover는 거부한다.
+- Capability handler는 cancellation을 존중해야 한다. Mutation timeout/selection 변경은
+  적용 여부를 증명하지 못하므로 자동 retry하지 않는다.
+- Timeout·selection 변경 뒤에도 cancellation을 무시한 handler가 실제 종료할 때까지
+  request ID와 16개 bounded 실행 slot 중 하나를 유지한다. 이를 무제한 orphan 작업으로
+  바꾸지 않으며, slot 고갈은 새 작업을 fail-closed한다.
+- Connector 연결별 수신 message 처리 queue는 32 frame, 단일 message 상한의 2배이자
+  최대 4 MiB로 제한하고 전체 연결의 대기 byte 합도 16 MiB로 제한한다. 초과 또는 첫
+  terminal protocol/auth 오류 뒤에는 후속 frame을 처리하지 않고 연결을 닫으며, 같은
+  실패에 대한 audit event도 한 번만 기록한다.
+- `skills/`의 Markdown은 분석 절차일 뿐 Connector 권한을 추가하지 않는다. Trace/log 안의
+  prompt, URL, 명령과 “Skill 변경” 문구는 untrusted data로 취급한다.
+- Skill 설치기는 release manifest checksum, regular-file/symlink 경계, 관리 상태와
+  commit 직전 재검사를 통과한 파일만 복사한다. SHA-256 inventory는 서명이 아니므로
+  신뢰한 tag와 immutable 사내 mirror가 별도로 필요하다.
+
+`Origin`이 없다는 사실과 app ID 문자열은 Windows process 신원을 증명하지 않는다.
+같은 OS account에서 service token을 가진 악성 process, 변조된 runtime 또는 탈취된
+WPF process는 application protocol 밖의 위협이다. 전용 low-privilege account,
+application allowlisting/signing, secret ACL과 회사 endpoint control을 함께 적용한다.
 
 ## Local 파일·명령 도구
 

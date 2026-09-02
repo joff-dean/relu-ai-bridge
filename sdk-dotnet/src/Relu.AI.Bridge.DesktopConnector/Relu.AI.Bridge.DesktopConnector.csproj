@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+    <PackageId>Relu.AI.Bridge.DesktopConnector</PackageId>
+    <Version>0.4.0</Version>
+    <Title>RELU AI Bridge Desktop Connector</Title>
+    <Authors>RELU AI Bridge</Authors>
+    <Description>Authenticated local desktop connector SDK for RELU AI Bridge.</Description>
+    <PackageTags>relu;ai;bridge;mcp;desktop;connector</PackageTags>
+    <PackageReadmeFile>NUGET_README_KO.md</PackageReadmeFile>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageProjectUrl>https://github.com/joff-dean/relu-ai-bridge</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/joff-dean/relu-ai-bridge</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <Copyright>Copyright (c) 2026. All rights reserved.</Copyright>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="../../NUGET_README_KO.md" Pack="true" PackagePath="\" />
+    <None Include="../../../LICENSE" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>

@@ -16,7 +16,7 @@ import {
 } from './bridge_client';
 
 const PLUGIN_ID = 'io.company.RELUPerfettoBridge';
-const PLUGIN_VERSION = '0.3.0';
+const PLUGIN_VERSION = '0.4.0';
 const COMMAND_SOURCE = 'RELU AI Bridge · Perfetto';
 
 export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {

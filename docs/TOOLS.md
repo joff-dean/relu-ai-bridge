@@ -20,7 +20,7 @@ Claude/Codex는 서비스 종류를 가정하기 전에 이 네 도구로 discov
 }
 ```
 
-둘 다 생략할 수 있다. 반환 session에는 `id`, `serviceId`, `serviceName`, opaque page/resource/session key, `active`, timestamp와 Capability 이름만 있다. `active`는 browser self-asserted 정렬 hint이므로 변경 대상을 이것만 보고 자동 선택하지 않는다. Page title, URL과 Context는 없다. Perfetto client는 `perfetto:<client-id>` session으로 함께 보인다.
+둘 다 생략할 수 있다. 반환 session에는 `id`, `serviceId`, `serviceName`, `clientKind`, 허용된 desktop app이면 `appId`, opaque client/page/resource/session key, `active`, timestamp와 Capability 이름만 있다. `active`는 connector self-asserted 정렬 hint이므로 변경 대상을 이것만 보고 자동 선택하지 않는다. Stable instance ID, page title, URL과 Context는 없다. Perfetto client는 `perfetto:<client-id>` session으로 함께 보인다.
 
 ### `get_context`
 
@@ -58,7 +58,7 @@ Claude/Codex는 서비스 종류를 가정하기 전에 이 네 도구로 discov
 }
 ```
 
-이 목록은 browser 광고가 아니라 server registry와 browser 구현의 검증된 교집합이다.
+이 목록은 browser/desktop 광고가 아니라 server registry와 인증된 client 구현의 검증된 교집합이다.
 
 ### `execute`
 
@@ -82,8 +82,26 @@ UI/data/external mutation은 unique `operationId`가 추가로 필요하다.
 ```
 
 Bridge는 정적 input schema를 호출 전, output schema를 반환 전 검사한다. `execute`에 임의 URL, method, headers, script, selector나 command를 넣는 것은 지원되지 않는다.
+`connectors.maxResultBytes`는 항목별 제한이 아니라 직렬화한 Capability 결과 전체의
+합산 byte 제한이므로, array의 `maxItems`·string의 `maxLength`와 함께 적용된다.
 
-변경 operation은 policyEpoch+service+Origin+resource+capability+operationId 원장에서 deduplicate된다. Timeout/실패처럼 결과가 모호하면 같은 resource의 후속 변경도 차단한다. `/admin/`의 변경 작업 원장에서 실제 상태 확인과 별도 local approval을 거쳐야 해제할 수 있으며, reconnect나 새 탭으로 우회할 수 없다.
+Desktop selection 분석에서는 `get_context`가 반환한 dataset/selection revision과 전체
+selection 범위를 먼저 기록한다. Bridge는 server snapshot과 `executionGuardFields`
+projection을 dispatch 직전
+재검사하고 .NET SDK도 handler 전후의 live Context를 비교한다. 선택이 바뀌면
+connector는 내부 failure code `CONTEXT_CHANGED`를 보낸다. Core는 connector가 보낸
+raw detail을 반사하지 않고 이 allowlist code를 고정 MCP 오류 문구
+`Connector selection context changed; call get_context and retry`로 변환한다. Read-only
+분석에서 이 문구가 보이면 이전 구간 결과와 새 구간 결과를 합치지 말고 `get_context`부터
+다시 시작한다. Mutation이면 결과가 ambiguous할 수 있으므로 자동 retry하지 않고
+operation ledger 판정 절차를 따른다.
+명시 guard가 없는 기존 browser service는 더 엄격한 전체 Context version 검사를 계속
+사용한다.
+
+승인·변경 원장의 connector peer는 browser의 server-observed exact Origin 또는 allowlist의
+desktop app ID에서 도출한 `relu-desktop://<sha256>` opaque trust-domain key다. 별도
+page/application-instance binding이 실제 탭이나 desktop instance를 묶는다.
+변경 operation은 policyEpoch+service+connector peer+resource+capability+operationId 원장에서 deduplicate된다. Timeout/실패처럼 결과가 모호하면 같은 resource의 후속 변경도 차단한다. `/admin/`의 변경 작업 원장에서 실제 상태 확인과 별도 local approval을 거쳐야 해제할 수 있으며, reconnect나 새 탭으로 우회할 수 없다.
 
 ### Operation ledger 유지보수
 

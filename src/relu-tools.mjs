@@ -39,9 +39,9 @@ const PERFETTO_CAPABILITIES = Object.freeze([
 
 export function createReluToolDefinitions() {
   return [
-    tool('list_sessions', 'Start here: list privacy-safe live RELU AI Bridge sessions across configured web services and Perfetto.', objectSchema({
+    tool('list_sessions', 'Start here: list privacy-safe live RELU AI Bridge sessions across configured browser services, desktop applications, and Perfetto.', objectSchema({
       serviceId: string('Optional exact service id.', 64),
-      activeOnly: { type: 'boolean', description: 'Filter by the browser-reported focus hint; never use this hint alone to authorize or target a mutation.' },
+      activeOnly: { type: 'boolean', description: 'Filter by the connector-reported focus hint; never use this hint alone to authorize or target a mutation.' },
     }), { readOnlyHint: true }),
     tool('get_context', 'Read the structured current-view context for one RELU session. The first read requires a locally revocable scoped approval.', objectSchema({
       sessionId: string('Session id returned by list_sessions.', 200),
@@ -160,12 +160,14 @@ export class ReluTools {
 
   approvalScope(kind, descriptor) {
     const tuple = {
-      version: 2,
+      version: 3,
       kind,
       connectorId: descriptor.serviceId,
       origin: descriptor.origin,
       pageBinding: descriptor.pageBinding,
       resourceBinding: descriptor.contextBinding,
+      executionGuardMode: descriptor.executionGuardMode,
+      executionGuardFields: descriptor.executionGuardFields,
       connectorVersion: descriptor.connectorVersion,
       capabilityId: descriptor.capability?.name ?? 'get_context',
       transport: descriptor.capability?.transport ?? 'context-plane',

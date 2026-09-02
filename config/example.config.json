@@ -12,6 +12,7 @@
   "connectors": {
     "enabled": true,
     "websocketPath": "/relu/ws",
+    "desktopWebsocketPath": "/relu/desktop/ws",
     "allowInsecureHttp": false,
     "requestTimeoutMs": 30000,
     "maxWebSocketMessageBytes": 1048576,

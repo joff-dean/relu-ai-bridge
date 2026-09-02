@@ -82,6 +82,7 @@ test('config loads a strict service registry with separate connector credential'
   assert.equal(config.privacy.recordAudit, true);
   assert.equal(config.privacy.recordSessions, false);
   assert.deepEqual(config.connectors.allowedOrigins, ['https://battery.internal.example']);
+  assert.equal(config.connectors.services[0].executionGuardMode, 'strict_context_version');
   const http = config.connectors.services[0].capabilities.find((item) => item.transport === 'http');
   assert.equal(http.http.auth.value, environment.RELU_LOG_API_AUTHORIZATION);
   const redacted = createRedactor(config)([
@@ -94,6 +95,106 @@ test('config loads a strict service registry with separate connector credential'
   assert.equal(redacted.includes('log_api_credential'), false);
   assert.equal(redacted.includes('main_control_token'), false);
   assert.equal(redacted.includes('perfetto_connector_token'), false);
+});
+
+test('config normalizes exact desktop app clients and separates resource from execution guards', async (t) => {
+  const env = await fixture();
+  t.after(() => env.cleanup());
+  const { raw, service, file } = await configFiles(env);
+  service.clientKinds = ['desktop'];
+  service.origins = [];
+  service.desktopAppIds = ['com.relu.AndroidLogViewer'];
+  service.executionGuardFields = ['payloadId', 'view'];
+  service.capabilities = service.capabilities.filter((capability) => capability.transport !== 'http');
+  for (const capability of service.capabilities) {
+    if (capability.transport === 'browser') capability.transport = 'desktop';
+  }
+  await fs.writeFile(file, JSON.stringify(raw));
+
+  const config = await loadConfig({ configPath: file, environment });
+  const normalized = config.connectors.services[0];
+  assert.deepEqual(normalized.clientKinds, ['desktop']);
+  assert.deepEqual(normalized.desktopAppIds, ['com.relu.AndroidLogViewer']);
+  assert.deepEqual(normalized.origins, []);
+  assert.deepEqual(normalized.bindingFields, ['payloadId']);
+  assert.deepEqual(normalized.executionGuardFields, ['payloadId', 'view']);
+  assert.equal(normalized.executionGuardMode, 'projection');
+  assert.equal(config.connectors.desktopWebsocketPath, '/relu/desktop/ws');
+  assert.ok(normalized.capabilities.some((capability) => capability.transport === 'desktop'));
+});
+
+test('desktop connector configuration fails closed on mixed identity and guard policies', async (t) => {
+  const env = await fixture();
+  t.after(() => env.cleanup());
+  const { raw, service, file } = await configFiles(env);
+  const makeDesktop = () => {
+    const value = structuredClone(service);
+    value.clientKinds = ['desktop'];
+    value.origins = [];
+    value.desktopAppIds = ['com.relu.AndroidLogViewer'];
+    value.executionGuardFields = ['payloadId', 'view'];
+    value.capabilities = value.capabilities.filter((capability) => capability.transport !== 'http');
+    for (const capability of value.capabilities) {
+      if (capability.transport === 'browser') capability.transport = 'desktop';
+    }
+    return value;
+  };
+  const cases = [
+    [(value) => { value.clientKinds = ['browser', 'desktop']; }, /clientKinds/u],
+    [(value) => { value.desktopAppIds = []; }, /desktopAppIds/u],
+    [(value) => { value.desktopAppIds = ['com.relu.AndroidLogViewer', 'com.relu.OtherViewer']; }, /desktopAppIds/u],
+    [(value) => { value.desktopAppIds = ['bad app id']; }, /desktopAppIds/u],
+    [(value) => { value.origins = ['https://battery.internal.example']; }, /origins/u],
+    [(value) => { value.executionGuardFields = ['view']; }, /include every bindingFields/u],
+    [(value) => { value.executionGuardFields = ['payloadId', 'selection']; }, /must be required/u],
+    [(value) => { value.capabilities[0].transport = 'browser'; }, /enabled by clientKinds/u],
+    [(value) => {
+      value.capabilities.push(structuredClone(service.capabilities.find((capability) => capability.transport === 'http')));
+    }, /only desktop capabilities/u],
+  ];
+  for (const [mutate, pattern] of cases) {
+    const candidate = makeDesktop();
+    mutate(candidate);
+    raw.connectors.services = [candidate];
+    await fs.writeFile(file, JSON.stringify(raw));
+    await assert.rejects(() => loadConfig({ configPath: file, environment }), pattern);
+  }
+
+  raw.connectors.services = [makeDesktop()];
+  raw.connectors.desktopWebsocketPath = '/relu/ws';
+  await fs.writeFile(file, JSON.stringify(raw));
+  await assert.rejects(() => loadConfig({ configPath: file, environment }), /desktopWebsocketPath is fixed/u);
+});
+
+test('WPF Android log viewer desktop service example is accepted by the registry', async (t) => {
+  const env = await fixture();
+  t.after(() => env.cleanup());
+  const { raw, file } = await configFiles(env);
+  const desktopService = JSON.parse(await fs.readFile(
+    new URL('../config/android-log-viewer.desktop.service.example.json', import.meta.url), 'utf8',
+  ));
+  raw.connectors.services = [desktopService];
+  await fs.writeFile(file, JSON.stringify(raw));
+  const config = await loadConfig({
+    configPath: file,
+    environment: {
+      ...environment,
+      RELU_ANDROID_LOG_VIEWER_TOKEN: 'android_log_viewer_connector_token_long_enough',
+    },
+  });
+  const [service] = config.connectors.services;
+  assert.equal(service.id, 'android-log-viewer');
+  assert.deepEqual(service.clientKinds, ['desktop']);
+  assert.deepEqual(service.executionGuardFields, [
+    'logResourceId', 'datasetRevision', 'selectionId', 'selectionRevision', 'selection',
+  ]);
+  assert.deepEqual(service.capabilities.map((capability) => capability.name), [
+    'get_selection_stats', 'get_selection_series', 'get_log_excerpt',
+    'get_extracted_sections', 'find_anomalies',
+  ]);
+  const series = service.capabilities.find((capability) => capability.name === 'get_selection_series');
+  assert.equal(series.outputSchema.properties.series.maxItems, 6);
+  assert.equal(series.outputSchema.properties.series.items.properties.points.maxItems, 1000);
 });
 
 test('approved root paths are frozen to their canonical target at startup', async (t) => {

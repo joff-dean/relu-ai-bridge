@@ -1,6 +1,6 @@
 # RELU AI Bridge 외부 릴리스 및 사내 반입 묶음 생성 가이드
 
-이 문서는 범용 사내 웹서비스 AI 연결 플랫폼 **RELU AI Bridge**의 외부 개발
+이 문서는 범용 사내 browser/desktop AI 연결 플랫폼 **RELU AI Bridge**의 외부 개발
 결과를 검증 가능한 오프라인 묶음으로 만드는 절차다. Perfetto는 전체 제품이
 아니라 Connector #1이다. 회사 Perfetto fork, company-only adapter, 실제 trace,
 분석 결과, 사내 경로·계정·제품 정보는 이 절차의 입력이나 산출물에 포함하지
@@ -15,13 +15,16 @@
 | RELU core | `compat/relu-ai-bridge.json` | 제품명, core version, release tag/ref 정책, connector 목록 |
 | Connector #1 | `compat/connectors/perfetto-v57.2.json` | adapter contract, 공개 Perfetto 기준선, overlay 경로, 회사 정보 분리 정책 |
 
-현재 core version은 `0.3.0`, release tag는 정확히
-`relu-ai-bridge-v0.3.0`이다. core version을 바꾸지 않고 tag만 새로 만들 수 없다.
-`package.json`의 package name/version도 `relu-ai-bridge`/`0.3.0`과 정확히 같아야
+현재 core version은 `0.4.0`, release tag는 정확히
+`relu-ai-bridge-v0.4.0`이다. core version을 바꾸지 않고 tag만 새로 만들 수 없다.
+`package.json`의 package name/version도 `relu-ai-bridge`/`0.4.0`과 정확히 같아야
 하며 생성·반입 도구가 이를 재검증한다.
-현재 Perfetto Connector #1 release version도 `0.3.0`이다. connector release
+현재 Perfetto Connector #1 release version도 `0.4.0`이다. connector release
 version, adapter contract `v57`, public product baseline `v57.2`는 서로 다른 축이며
 manifest에서 각각 기록한다.
+`.NET Desktop Connector` package version도 core와 같은 `0.4.0`이며, 분석 Skill
+suite는 자체 content version `0.1.0`과 file별 SHA-256 inventory를 갖는다. 이 둘도
+같은 core tag/bundle에서만 공급하며 외부 최신 파일을 따로 내려받아 섞지 않는다.
 새 connector를 추가할 때는 core manifest의 connector 목록과 해당 connector의
 별도 manifest/schema를 추가한다.
 
@@ -34,7 +37,7 @@ Perfetto Connector #1의 공개 기준선은 다음과 같다.
 | annotated tag object | `24bdfb9dfa2dc92883761426dd94259756fa197e` |
 | peeled commit | `da1d152cff27890903d158fe96751de3aab883cc` |
 | adapter contract | `v57` |
-| RELU connector version | `0.3.0` |
+| RELU connector version | `0.4.0` |
 
 공개 확인 자료는 [Perfetto v57.2 release](https://github.com/google/perfetto/releases/tag/v57.2),
 [Perfetto UI plugin 문서](https://perfetto.dev/docs/contributing/ui-plugins),
@@ -83,6 +86,10 @@ SHA-256은 전송 중 손상·변조를 탐지하지만 작성자 신원을 증�
 - `git status --short`가 비어 있고 HEAD가 release tag의 peeled commit이다.
 - core/connector manifest와 schema를 검토했다.
 - 전체 Node 테스트와 보안 경계 회귀 테스트를 통과했다.
+- `.NET 8` Release build, Node/.NET 공용 desktop HMAC vector, `net8.0-windows` WPF 예제
+  build와 실제 NuGet pack/README/LICENSE inventory 검사를 통과했다.
+- `manage-skills.mjs verify-source`, Skill validator와 임시 Claude/Codex project의
+  install/verify/uninstall을 통과했다.
 - 공개 Perfetto exact v57.2 checkout에 copy overlay하여 connector test/typecheck를
   통과했다.
 - 회사 코드, 실제 trace, SQL 결과, screenshot, log, AI transcript, credential을
@@ -102,7 +109,7 @@ scripts/perfetto/release-security-smoke-test.sh
 mirror에 들어가지 않는지, 같은 commit의 다른 annotated tag object가 immutable
 충돌로 처리되는지를 재현한다. 또한 clean annotated-tag fixture에서 core manifest,
 root/SDK package, Chrome Companion, Perfetto plugin, MCP serverInfo와 health의 제품명·
-version 정합성을 먼저 검사한다. root/SDK/extension/plugin/MCP/health version drift는
+version 정합성을 먼저 검사한다. .NET SDK와 Skill inventory도 tagged tree에서 검토한다. root/SDK/extension/plugin/MCP/health version drift는
 producer gate뿐 아니라 별도의 trusted verifier와 importer에서도 반드시 거부되고,
 거부된 import가 mirror에 ref나 object를 남기지 않는지 확인한다. Source drift fixture는
 올바른 값을 주석에 남겨 단순 문자열 검색으로 실제 drift를 가릴 수 없는지도 검증한다.
@@ -132,7 +139,15 @@ scripts/perfetto/integrate.sh \
   /work-external/perfetto-v57.2
 scripts/perfetto/smoke-test.sh /work-external/perfetto-v57.2
 scripts/perfetto/build-test.sh --typecheck /work-external/perfetto-v57.2
+dotnet build sdk-dotnet/Relu.AI.Bridge.DesktopConnector.sln -c Release -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
+dotnet run --project sdk-dotnet/tests/Relu.AI.Bridge.DesktopConnector.Tests/Relu.AI.Bridge.DesktopConnector.Tests.csproj -c Release -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
+dotnet build examples/wpf-android-log-viewer/WpfAndroidLogViewer.Integration.csproj -c Release -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
+node scripts/skills/manage-skills.mjs verify-source
 ```
+
+.NET release build는 상위 `Directory.Build.props/targets`가 없는 격리 root에서 수행한다.
+NuGet pack/version/nuspec/dependency/inventory/hash 검증은
+[사내 동기화 가이드](INTERNAL_SYNC_KO.md#sdk와-skill-사내-배포)를 따른다.
 
 개발 중에는 공개 checkout에 한해 `--mode symlink --allow-dirty-source`를 사용할 수
 있다. release/사내 통합은 clean RELU checkout의 copy overlay만 사용한다.
@@ -145,17 +160,17 @@ manifest의 version과 tag가 일치하는지 확인한 뒤 tag를 만든다.
 
 ```bash
 git status --short
-git tag -a relu-ai-bridge-v0.3.0 \
-  -m "RELU AI Bridge v0.3.0"
-git show --no-patch --decorate relu-ai-bridge-v0.3.0
+git tag -a relu-ai-bridge-v0.4.0 \
+  -m "RELU AI Bridge v0.4.0"
+git show --no-patch --decorate relu-ai-bridge-v0.4.0
 ```
 
 서명 정책을 사용하는 경우:
 
 ```bash
-git tag -s relu-ai-bridge-v0.3.0 \
-  -m "RELU AI Bridge v0.3.0"
-git verify-tag relu-ai-bridge-v0.3.0
+git tag -s relu-ai-bridge-v0.4.0 \
+  -m "RELU AI Bridge v0.4.0"
+git verify-tag relu-ai-bridge-v0.4.0
 ```
 
 게시된 tag를 이동·삭제·재생성하지 않는다. 수정은 core version을 올리고 새 tag로
@@ -167,8 +182,8 @@ git verify-tag relu-ai-bridge-v0.3.0
 
 ```bash
 scripts/perfetto/create-release.sh \
-  --tag relu-ai-bridge-v0.3.0 \
-  --output /secure-transfer/out/relu-ai-bridge-v0.3.0
+  --tag relu-ai-bridge-v0.4.0 \
+  --output /secure-transfer/out/relu-ai-bridge-v0.4.0
 ```
 
 서명 tag를 강제할 때:
@@ -176,8 +191,8 @@ scripts/perfetto/create-release.sh \
 ```bash
 scripts/perfetto/create-release.sh \
   --require-signed-tag \
-  --tag relu-ai-bridge-v0.3.0 \
-  --output /secure-transfer/out/relu-ai-bridge-v0.3.0
+  --tag relu-ai-bridge-v0.4.0 \
+  --output /secure-transfer/out/relu-ai-bridge-v0.4.0
 ```
 
 출력 디렉터리는 기존 경로를 덮어쓰지 않는다. 임시 staging에서 scanner와
@@ -185,12 +200,12 @@ inbound verifier까지 통과한 뒤 한 번의 rename으로 공개한다.
 
 | 파일 | 목적 |
 |---|---|
-| `relu-ai-bridge-v0.3.0.bundle` | exact core tag와 reachable object 전달 |
+| `relu-ai-bridge-v0.4.0.bundle` | exact core tag와 reachable object 전달 |
 | `release-manifest.json` | raw tag/commit, core version, connector별 contract·기준선·tree ID |
 | `source-inventory.txt` | 최종 tree의 tracked path, mode, object ID |
 | `history-inventory.txt` | commit/parent/시간/author/committer/제목 |
 | `tag-metadata.txt` | annotated tag 원문과 선택적 서명 |
-| `dependency-manifest.txt` | dependency/lock manifest object ID |
+| `dependency-manifest.txt` | Node/Python/Rust 및 .NET build/Skill manifest object ID |
 | `SHA256SUMS` | 앞의 여섯 파일 무결성 |
 
 `release-manifest.json`에는 회사 target label, 정확한 SHA, adapter tree, 검증 상태,
@@ -202,7 +217,7 @@ CI 결과를 어떤 형태로도 담지 않는다. 이 정보는 사내 저장�
 
 ```bash
 scripts/perfetto/verify-release.sh \
-  /secure-transfer/out/relu-ai-bridge-v0.3.0
+  /secure-transfer/out/relu-ai-bridge-v0.4.0
 ```
 
 검역 결과로 exact-tag bundle도 별도 생성할 수 있다. 출력은 존재하지 않아야
@@ -210,8 +225,8 @@ scripts/perfetto/verify-release.sh \
 
 ```bash
 scripts/perfetto/verify-release.sh \
-  --sanitized-bundle /quarantine/verified/relu-ai-bridge-v0.3.0.bundle \
-  /secure-transfer/out/relu-ai-bridge-v0.3.0
+  --sanitized-bundle /quarantine/verified/relu-ai-bridge-v0.4.0.bundle \
+  /secure-transfer/out/relu-ai-bridge-v0.4.0
 ```
 
 서명 정책이면 `--require-signed-tag`를 함께 사용한다. 검증기는 bundle을 빈 bare

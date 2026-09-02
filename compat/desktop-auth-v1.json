@@ -1,0 +1,49 @@
+{
+  "description": "Public TEST-ONLY cross-language vector for the RELU desktop connector mutual-HMAC transcript.",
+  "token": "TEST_ONLY_desktop_connector_token_0123456789abcdef",
+  "protocolVersion": "1.0",
+  "audience": "relu-ai-bridge://loopback/relu/desktop/ws",
+  "serviceId": "android-log-viewer",
+  "appId": "com.relu.AndroidLogViewer",
+  "instanceId": "wpf_instance_01",
+  "clientNonce": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "serverNonce": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+  "registration": {
+    "client": {
+      "serviceId": "android-log-viewer",
+      "clientKind": "desktop",
+      "appId": "com.relu.AndroidLogViewer",
+      "instanceId": "wpf_instance_01",
+      "connectorVersion": "0.4.0",
+      "capabilities": [
+        "get_selection_stats",
+        "get_log_excerpt"
+      ]
+    },
+    "context": {
+      "logResourceId": "log-fixture-001",
+      "datasetRevision": "rev-42",
+      "selectionRevision": "selection-108",
+      "selection": {
+        "startMs": 1000,
+        "endMs": 2000
+      }
+    },
+    "active": true
+  },
+  "registrationJson": "{\"active\":true,\"client\":{\"appId\":\"com.relu.AndroidLogViewer\",\"capabilities\":[\"get_selection_stats\",\"get_log_excerpt\"],\"clientKind\":\"desktop\",\"connectorVersion\":\"0.4.0\",\"instanceId\":\"wpf_instance_01\",\"serviceId\":\"android-log-viewer\"},\"context\":{\"datasetRevision\":\"rev-42\",\"logResourceId\":\"log-fixture-001\",\"selection\":{\"endMs\":2000,\"startMs\":1000},\"selectionRevision\":\"selection-108\"}}",
+  "registrationDigest": "0cd431f9efc7ed883f405ca987ece627488604921fca62ac2df7bd6978847dd1",
+  "serverPayload": "[\"RELU_DESKTOP_CONNECTOR_AUTH\",\"1.0\",\"relu-ai-bridge://loopback/relu/desktop/ws\",\"server\",\"android-log-viewer\",\"com.relu.AndroidLogViewer\",\"wpf_instance_01\",\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210\",\"\"]",
+  "serverProof": "5b76fb67317d04efebfec1a5e468b71b9d4ba6d6aa924a1551e09d23e806658a",
+  "clientPayload": "[\"RELU_DESKTOP_CONNECTOR_AUTH\",\"1.0\",\"relu-ai-bridge://loopback/relu/desktop/ws\",\"client\",\"android-log-viewer\",\"com.relu.AndroidLogViewer\",\"wpf_instance_01\",\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210\",\"0cd431f9efc7ed883f405ca987ece627488604921fca62ac2df7bd6978847dd1\"]",
+  "clientProof": "2a121de483bbe1cbf3bb95b269a5aafddd63f005f3d3e08ec881a06ba596b147",
+  "rawRegistrationCases": [
+    {
+      "name": "unicode-decimal-exponent",
+      "registrationJson": "{\"context\":{\"label\":\"분석\",\"escaped\":\"\\uBD84\\uC11D\",\"ratio\":1.0,\"exponent\":1e3},\"client\":{\"serviceId\":\"android-log-viewer\",\"clientKind\":\"desktop\",\"appId\":\"com.relu.AndroidLogViewer\",\"instanceId\":\"wpf_instance_01\",\"connectorVersion\":\"0.4.0\",\"capabilities\":[]},\"active\":true}",
+      "registrationDigest": "2009ec7ab263b3ef5bb9ca9dc3fe6b13fc595c8490490c24ccdeee09995b93a9",
+      "clientPayload": "[\"RELU_DESKTOP_CONNECTOR_AUTH\",\"1.0\",\"relu-ai-bridge://loopback/relu/desktop/ws\",\"client\",\"android-log-viewer\",\"com.relu.AndroidLogViewer\",\"wpf_instance_01\",\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210\",\"2009ec7ab263b3ef5bb9ca9dc3fe6b13fc595c8490490c24ccdeee09995b93a9\"]",
+      "clientProof": "feab467c4aa508ea232f1f28c9878b7ceff9aa068b1898539cb8b926d303182a"
+    }
+  ]
+}

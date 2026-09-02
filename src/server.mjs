@@ -129,7 +129,7 @@ export async function createApplication(options = {}) {
       return sendJson(response, 200, {
         ok: true,
         name: 'relu-ai-bridge',
-        version: '0.3.0',
+        version: '0.4.0',
         auth: config.server.auth,
         mcpAuth: config.server.mcpAuth,
         roots: config.roots.length,
@@ -293,13 +293,18 @@ export async function createApplication(options = {}) {
       const requestUrl = new URL(requestTarget, 'http://127.0.0.1');
       const isPerfettoSocket = config.perfetto.enabled && requestUrl.pathname === config.perfetto.websocketPath;
       const isConnectorSocket = config.connectors.enabled && requestUrl.pathname === config.connectors.websocketPath;
-      if (!isPerfettoSocket && !isConnectorSocket) {
+      const isDesktopConnectorSocket = config.connectors.enabled
+        && requestUrl.pathname === config.connectors.desktopWebsocketPath
+        && requestUrl.search === '';
+      if (!isPerfettoSocket && !isConnectorSocket && !isDesktopConnectorSocket) {
         socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
         return socket.destroy();
       }
       const origin = request.headers.origin;
       const allowedOrigins = isPerfettoSocket ? config.perfetto.allowedOrigins : config.connectors.allowedOrigins;
-      if (typeof origin !== 'string' || !allowedOrigins.includes(origin)) {
+      if (isDesktopConnectorSocket ? origin !== undefined : (
+        typeof origin !== 'string' || !allowedOrigins.includes(origin)
+      )) {
         socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
         return socket.destroy();
       }
@@ -310,7 +315,8 @@ export async function createApplication(options = {}) {
       });
       if (connection) {
         if (isPerfettoSocket) perfetto.accept(connection, { origin });
-        else connectors.accept(connection, { origin });
+        else if (isDesktopConnectorSocket) connectors.accept(connection, { clientKind: 'desktop' });
+        else connectors.accept(connection, { clientKind: 'browser', origin });
       }
     } catch {
       socket.destroy();

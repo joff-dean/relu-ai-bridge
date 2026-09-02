@@ -175,7 +175,7 @@ export class McpService {
       result: {
         protocolVersion: '2025-06-18',
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: 'relu-ai-bridge', version: '0.3.0' },
+        serverInfo: { name: 'relu-ai-bridge', version: '0.4.0' },
         instructions: 'Start with list_sessions, then get_context and list_capabilities. Use execute only with a listed server-authoritative capability. Perfetto is Connector #1 and retains dedicated bounded SQL and REF/DUT tools. Reads and mutations can require a locally revocable once/session/always approval. Never request secrets, arbitrary URLs, methods, headers, scripts, selectors, commands, or approval bypasses.',
       },
     };

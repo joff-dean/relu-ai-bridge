@@ -1,6 +1,6 @@
 # RELU AI Bridge 아키텍처
 
-RELU AI Bridge의 core는 특정 웹서비스를 모른다. 서버 시작 시 로드한 service registry와 각 Connector가 구현한 작은 adapter를 통해 여러 사내 분석 서비스를 하나의 MCP workspace로 노출한다. Perfetto는 Connector #1이며 전용 보안·정렬 기능을 유지한다.
+RELU AI Bridge의 core는 특정 웹서비스나 Windows 프로그램을 모른다. 서버 시작 시 로드한 service registry와 각 Connector가 구현한 작은 adapter를 통해 여러 사내 분석 서비스를 하나의 MCP workspace로 노출한다. Perfetto는 Connector #1이며 전용 보안·정렬 기능을 유지한다.
 
 ## 논리 구조
 
@@ -20,16 +20,17 @@ RELU AI Bridge @ explicit loopback
              │
   ┌──────────┴──────────────────────────┐
   │ Context Plane                       │ Data Plane
-  │ browser → current opaque context    │ exact capability dispatch
+  │ browser/desktop → opaque context    │ exact capability dispatch
   ▼                                     ▼
-Web Connector SDK             browser handler / fixed HTTPS API
+Web SDK / .NET Desktop SDK    browser/desktop handler / fixed HTTPS API
   │                                     │
   └──── Log Viewer / Wiki / DB / Perfetto ────┘
 ```
 
 ## Context Plane
 
-브라우저 탭 하나를 live RELU session으로 취급한다. SDK는 연결 직후 service ID와
+브라우저 탭 또는 데스크톱 application instance 하나를 live RELU session으로 취급한다.
+Browser SDK는 연결 직후 service ID와
 page-load마다 생성한 fresh 256-bit client nonce만 담은 `auth_init`을 보낸다. 이
 시점에는 raw token, client descriptor, Context와 reconnect secret을 보내지 않는다.
 Bridge는 WebSocket handshake에서 관찰한 exact Origin과 service ID에 대응하는 token을
@@ -61,7 +62,20 @@ client → server  auth_init, auth_response, response,
 server → client  auth_challenge, hello_ack, request, ping
 ```
 
-WebSocket path는 `/relu/ws`로 고정된다. SDK도 `ws://127.0.0.1:<port>/relu/ws` 계열 explicit loopback만 허용한다. 순서·audience·nonce·proof가 다르거나 5초 timeout이 지나면 해당 연결을 fail-closed한다. 매 연결 nonce가 달라 캡처한 proof는 재사용할 수 없다.
+Browser WebSocket path는 `/relu/ws`로 고정된다. SDK도 `ws://127.0.0.1:<port>/relu/ws` 계열 explicit loopback만 허용한다. 순서·audience·nonce·proof가 다르거나 5초 timeout이 지나면 해당 연결을 fail-closed한다. 매 연결 nonce가 달라 캡처한 proof는 재사용할 수 없다.
+
+Desktop SDK는 `/relu/desktop/ws`만 사용한다. 이 endpoint는 `Origin` header가 있으면
+값과 무관하게 upgrade를 거부해 browser JavaScript 경로와 분리한다. Service별 정확한
+app ID 하나와 stable opaque instance ID, 전용 audience, 양쪽 nonce를 mutual HMAC에
+묶는다. Server proof 확인 뒤에만 exact UTF-8 `registrationJson`을 보내고, 그 raw byte
+digest를 client proof에 포함한다. Bridge는 proof를 먼저 검증한 뒤 duplicate-key 없는
+JSON parse, identity, Context schema와 Capability 교집합을 확인한다.
+
+`bindingFields`는 persistent resource scope를 결정한다. 선택 구간처럼 빠르게 바뀌는
+필드는 명시적 `executionGuardFields`에 추가할 수 있다. 이 모드에서 Bridge는 승인 뒤와
+dispatch 직전 projection을 재검사하고 Desktop SDK도 handler 직전·직후 live projection을
+비교한다. `executionGuardFields`를 명시하지 않은 기존 browser 계약은 strict
+`contextVersion` mode를 유지해 모든 Context update가 pending 실행을 취소한다.
 
 ## Capability Registry
 
@@ -72,13 +86,14 @@ service id + exact origins + service token audience
 capability id + description
 input schema + output schema
 effect + timeout + concurrency
-transport(browser | http)
+client kinds(browser | desktop) + browser exact Origin 또는 desktop exact app ID
+transport(browser | desktop | http)
 fixed HTTP endpoint/method/auth-env (HTTP일 때만)
 ```
 
 인증된 browser registration의 목록은 설정과 교집합을 만드는 데만 사용한다. unknown 이름을 광고하면 연결을 거부한다. AI의 `execute` argument에는 URL, method, header, script, selector나 command가 존재하지 않는다.
 
-Strict schema subset은 object/array/string/integer/number/boolean, enum과 bounded property keyword만 지원한다. 미지원 keyword는 무시하지 않고 config load를 실패시킨다. 입력과 출력 모두 byte, depth, node, string, array 제한을 통과한다.
+Strict schema subset은 object/array/string/integer/number/boolean, enum과 bounded property keyword만 지원한다. 미지원 keyword는 무시하지 않고 config load를 실패시킨다. 입력과 출력 모두 byte, depth, node, string, array 제한을 통과한다. `connectors.maxResultBytes`는 배열 항목별 상한이 아니라 직렬화한 Capability 결과 전체의 합산 byte 상한이다.
 
 ## Data Plane
 
@@ -95,6 +110,26 @@ execute(session, action, params)
 ```
 
 Handler에는 AbortSignal, mutation `operationId`와 승인 당시 `contextGuard`를 전달한다. Session당 16개, Capability별 설정된 concurrent limit을 넘기지 않는다. Read timeout도 late response/연결 종료까지 busy tombstone을 유지한다. Mutation timeout 뒤에는 resource/action을 잠그고 자동 retry하지 않는다.
+
+### Desktop transport
+
+WPF 같은 native application의 기존 domain/application service를 정적 handler로
+연결한다. UI Automation, screen scraping, reflection target 또는 arbitrary assembly
+loading은 사용하지 않는다.
+
+```text
+execute(session, action, params)
+  → registry/schema/effect/approval
+  → desktop WebSocket request + selection guard
+  → .NET SDK가 live Context 재검증
+  → 기존 bounded analysis engine
+  → live Context 재검증 + bounded result
+```
+
+설치별 stable instance ID로 application-instance binding을 재현하므로 같은 dataset의 persistent grant는
+앱 재시작 뒤에도 유지할 수 있다. Resume secret은 process memory에만 둔다. 같은 instance의
+live session이 없고 app/instance HMAC이 다시 검증된 경우에만 stale reconnect record를
+회전하며, 살아 있는 session의 takeover는 거부한다.
 
 ### HTTP transport
 
@@ -129,19 +164,25 @@ Perfetto 전용 도구와 제한된 local coding/agent 도구도 같은 MCP에 �
 
 브라우저나 모델은 승인을 생성할 수 없다. Pending request는 local admin/companion UI에서만 결정한다.
 
+승인과 mutation 원장에서 사용하는 **connector peer**는 browser라면 WebSocket
+handshake에서 server가 관찰한 exact Origin이고, desktop이라면 allowlist의 app ID에서
+도출한 `relu-desktop://<sha256>` opaque trust-domain key다. Desktop app ID 원문은
+routing/authentication metadata로만 쓰고 scope·원장에는 opaque peer를 넣는다.
+
 RELU Capability scope는 단순 문자열 prefix가 아니라 다음 tuple을 canonical JSON으로 직렬화하고 SHA-256으로 만든다.
 
 ```text
 scope version
 kind(context.read | capability)
 connector/service id
-server-observed exact Origin
-page-instance binding + bindingFields resource binding
+connector peer(browser exact Origin | desktop opaque app trust-domain hash)
+page/application-instance binding + bindingFields resource binding
 connector version + transport + fixed HTTP descriptor
 capability id
 input/output schema hash
 effect
 policy epoch
+execution guard mode + fields
 ```
 
 `once` fingerprint에는 normalized argument digest와 operation ID가 추가된다. `session` grant는 pending 생성 시 서버가 검증한 MCP session ID만 사용하며 승인 요청 body가 이를 바꾸지 못한다. `always`는 exact hashed scope에서만 동작한다.
@@ -156,7 +197,8 @@ RELU_PERFETTO_CONNECTOR_TOKEN
   └─ exact Perfetto Origin + plugin ID의 /perfetto/ws mutual HMAC만
 
 RELU_<SERVICE>_CONNECTOR_TOKEN
-  └─ 해당 service + exact Origin의 /relu/ws mutual HMAC만
+  └─ 해당 service + exact Origin의 /relu/ws 또는 exact app ID의
+     /relu/desktop/ws mutual HMAC만
 
 RELU_<SERVICE>_API_AUTHORIZATION
   └─ Bridge → 고정 Data Plane API header만
@@ -241,8 +283,10 @@ follow-up routing을 거부한다. Control token을 회전하면 기존 HMAC pri
 src/connectors.mjs       generic connection/context/data broker
 src/relu-tools.mjs       generic MCP discovery/approval/dispatch
 sdk/                     browser connector SDK
+sdk-dotnet/              .NET 8 desktop connector SDK
 config/                  core + service registry examples
-examples/                service adapter examples
+examples/                browser/WPF service adapter examples
+skills/                  Claude/Codex 공통 분석 playbook 정본
 
 src/perfetto-*.mjs       Connector #1 broker/store/tools
 plugin/                  Perfetto in-tree UI plugin

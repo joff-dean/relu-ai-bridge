@@ -15,7 +15,7 @@
         "id": {"const": "relu-ai-bridge"},
         "name": {"const": "RELU AI Bridge"},
         "core_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
-        "scope": {"const": "company-internal-web-service-ai-bridge"}
+        "scope": {"const": "company-internal-local-capability-ai-bridge"}
       }
     },
     "release": {

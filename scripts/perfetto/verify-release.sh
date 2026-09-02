@@ -381,16 +381,18 @@ python3 "$SCRIPT_DIR/release-security-scan.py" \
 # Inbound bundle의 실행 파일을 신뢰하거나 실행하지 않는다. 검역 bare repo의 고정된
 # tagged blob만 읽어 모든 배포 표면의 제품명/version 계약을 독립 재계산한다.
 python3 - "$verify_repo" "$tag_ref" "$manifest_core_version" <<'PY'
+import hashlib
 import json
 import pathlib
 import re
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 
 repository = pathlib.Path(sys.argv[1])
 tag_ref = sys.argv[2]
 core_version = sys.argv[3]
-max_contract_blob_bytes = 2 * 1024 * 1024
+max_contract_blob_bytes = 4 * 1024 * 1024
 
 
 def fail(label):
@@ -505,6 +507,55 @@ def strip_javascript_comments(source, label):
     return "".join(result)
 
 
+def strip_csharp_comments(source, label):
+    result = []
+    state = "code"
+    index = 0
+    while index < len(source):
+        character = source[index]
+        following = source[index + 1] if index + 1 < len(source) else ""
+        if state == "code":
+            if character in ("'", '"'):
+                state = character
+                result.append(character)
+                index += 1
+            elif character == "/" and following == "/":
+                result.extend((" ", " "))
+                state = "line-comment"
+                index += 2
+            elif character == "/" and following == "*":
+                result.extend((" ", " "))
+                state = "block-comment"
+                index += 2
+            else:
+                result.append(character)
+                index += 1
+        elif state in ("'", '"'):
+            result.append(character)
+            index += 1
+            if character == "\\" and index < len(source):
+                result.append(source[index])
+                index += 1
+            elif character == state:
+                state = "code"
+        elif state == "line-comment":
+            result.append("\n" if character == "\n" else " ")
+            index += 1
+            if character == "\n":
+                state = "code"
+        else:
+            if character == "*" and following == "/":
+                result.extend((" ", " "))
+                state = "code"
+                index += 2
+            else:
+                result.append("\n" if character == "\n" else " ")
+                index += 1
+    if state in ("block-comment", "'", '"'):
+        fail(f"unterminated C# token: {label}")
+    return "".join(result)
+
+
 def require_unique_regex(source, pattern, label, flags=0):
     if len(list(re.finditer(pattern, source, flags))) != 1:
         fail(label)
@@ -512,13 +563,23 @@ def require_unique_regex(source, pattern, label, flags=0):
 
 root_package = tagged_json("package.json")
 sdk_package = tagged_json("sdk/package.json")
+dotnet_project_source = tagged_text("sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj")
+dotnet_options_source = tagged_text("sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluDesktopConnectorOptions.cs")
+skills_manifest = tagged_json("skills/manifest.json")
 extension = tagged_json("extension/manifest.json")
+web_connector_source = tagged_text("sdk/relu-web-connector.js")
 plugin_source = tagged_text("plugin/io.company.RELUPerfettoBridge/index.ts")
 mcp_source = tagged_text("src/mcp.mjs")
 server_source = tagged_text("src/server.mjs")
 plugin_code = strip_javascript_comments(plugin_source, "Perfetto plugin")
 mcp_code = strip_javascript_comments(mcp_source, "MCP server")
 server_code = strip_javascript_comments(server_source, "health server")
+web_connector_code = strip_javascript_comments(web_connector_source, "web connector SDK")
+if '@"' in dotnet_options_source or '@$"' in dotnet_options_source or '"""' in dotnet_options_source:
+    fail(".NET connector unsupported string form")
+if re.search(r"^[ \t]*#", dotnet_options_source, re.MULTILINE) is not None:
+    fail(".NET connector preprocessor directive")
+dotnet_options_code = strip_csharp_comments(dotnet_options_source, ".NET connector options")
 
 if not isinstance(root_package, dict) or root_package.get("name") != "relu-ai-bridge":
     fail("root package name")
@@ -528,6 +589,137 @@ if not isinstance(sdk_package, dict) or sdk_package.get("name") != "@company/rel
     fail("SDK package name")
 if sdk_package.get("version") != core_version:
     fail("SDK package version")
+try:
+    dotnet_project = ET.fromstring(dotnet_project_source)
+except ET.ParseError:
+    fail(".NET SDK project XML")
+if dotnet_project.tag != "Project" or dotnet_project.attrib != {"Sdk": "Microsoft.NET.Sdk"}:
+    fail(".NET SDK project root")
+dotnet_elements = list(dotnet_project.iter())
+
+def xml_local_name(tag):
+    return tag.rsplit("}", 1)[-1].casefold()
+
+def exact_unconditional_property(name, expected):
+    all_nodes = [element for element in dotnet_elements if xml_local_name(element.tag) == name.casefold()]
+    direct = []
+    for group in list(dotnet_project):
+        if xml_local_name(group.tag) != "propertygroup":
+            continue
+        for node in list(group):
+            if xml_local_name(node.tag) == name.casefold():
+                direct.append((group, node))
+    if len(all_nodes) != 1 or len(direct) != 1:
+        return False
+    group, node = direct[0]
+    return (group.tag == "PropertyGroup" and node.tag == name
+        and not group.attrib and not node.attrib and not list(node)
+        and (node.text or "").strip() == expected)
+
+if not exact_unconditional_property("TargetFramework", "net8.0"):
+    fail(".NET SDK target")
+if not exact_unconditional_property("Version", core_version):
+    fail(".NET SDK version")
+for forbidden_property in ("TargetFrameworks", "PackageVersion", "VersionPrefix", "VersionSuffix"):
+    if any(xml_local_name(element.tag) == forbidden_property.casefold() for element in dotnet_elements):
+        fail(f".NET SDK forbidden override: {forbidden_property}")
+for forbidden_element in ("Import", "ImportGroup", "Target", "UsingTask"):
+    if any(xml_local_name(element.tag) == forbidden_element.casefold() for element in dotnet_elements):
+        fail(f".NET SDK executable override: {forbidden_element}")
+try:
+    tagged_paths = git("ls-tree", "-r", "--name-only", "-z", tag_ref).decode("utf-8").split("\0")
+except UnicodeDecodeError:
+    fail("tagged path encoding")
+tagged_path_set = {path.casefold() for path in tagged_paths if path}
+override_paths = {
+    name
+    for directory in ("", "sdk-dotnet/", "sdk-dotnet/src/", "sdk-dotnet/src/relu.ai.bridge.desktopconnector/")
+    for name in (f"{directory}directory.build.props", f"{directory}directory.build.targets")
+}
+if not tagged_path_set.isdisjoint(override_paths):
+    fail(".NET SDK Directory.Build override")
+version_pattern = re.escape(core_version)
+require_unique_regex(
+    plugin_code,
+    r"\b(?:const|let|var)[ \t]+PLUGIN_VERSION[ \t]*=",
+    "Perfetto plugin version declaration count",
+)
+require_unique_regex(mcp_code, r"\bserverInfo\b[ \t]*:", "MCP serverInfo declaration count")
+require_unique_regex(server_code, r"['\"]/health['\"]", "health route declaration count")
+require_unique_regex(
+    web_connector_code,
+    r"\bthis\.connectorVersion[ \t]*=",
+    "web connector version assignment count",
+)
+require_unique_regex(
+    dotnet_options_code,
+    r"\b(?:public[ \t]+)?string[ \t]+ConnectorVersion[ \t]*\{",
+    ".NET connector version declaration count",
+)
+require_unique_regex(
+    web_connector_code,
+    rf"^[ \t]*this\.connectorVersion = String\(options\.connectorVersion \?\? '{version_pattern}'\);[ \t]*$",
+    "web connector default version",
+    re.MULTILINE,
+)
+require_unique_regex(
+    dotnet_options_code,
+    rf'^[ \t]*public string ConnectorVersion \{{ get; init; \}} = "{version_pattern}";[ \t]*$',
+    ".NET connector default version",
+    re.MULTILINE,
+)
+
+if not isinstance(skills_manifest, dict) or skills_manifest.get("schemaVersion") != 1:
+    fail("Skill manifest schema")
+if skills_manifest.get("suite") != "relu-ai-bridge-analysis-skills":
+    fail("Skill manifest suite")
+if re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", skills_manifest.get("suiteVersion", "")) is None:
+    fail("Skill suite version")
+skills = skills_manifest.get("skills")
+if not isinstance(skills, list) or not 1 <= len(skills) <= 32:
+    fail("Skill manifest entries")
+expected_skill_paths = {"skills/manifest.json"}
+skill_names = set()
+folded_paths = set()
+for skill in skills:
+    if not isinstance(skill, dict) or set(skill) != {"name", "directory", "files"}:
+        fail("Skill manifest entry")
+    name = skill.get("name", "")
+    directory = skill.get("directory", "")
+    if re.fullmatch(r"[a-z0-9-]{1,63}", name) is None or directory != name or name in skill_names:
+        fail("Skill name/directory")
+    skill_names.add(name)
+    records = skill.get("files")
+    if not isinstance(records, list) or not 1 <= len(records) <= 256:
+        fail("Skill file inventory")
+    has_entrypoint = False
+    for record in records:
+        if not isinstance(record, dict) or set(record) != {"path", "sha256", "bytes"}:
+            fail("Skill file record")
+        relative = record.get("path", "")
+        parts = relative.split("/") if isinstance(relative, str) else []
+        if (not relative or len(relative) > 240 or "\\" in relative or relative.startswith("/")
+                or any(part in ("", ".", "..", ".relu-ai-bridge-install.json") for part in parts)):
+            fail("Skill file path")
+        full_path = f"skills/{directory}/{relative}"
+        folded = full_path.lower()
+        if folded in folded_paths:
+            fail("Skill file path collision")
+        folded_paths.add(folded)
+        expected_skill_paths.add(full_path)
+        content = tagged_blob(full_path)
+        if (not isinstance(record.get("bytes"), int) or record["bytes"] != len(content)
+                or not 1 <= record["bytes"] <= 4 * 1024 * 1024):
+            fail("Skill file byte length")
+        if not isinstance(record.get("sha256"), str) or hashlib.sha256(content).hexdigest() != record["sha256"]:
+            fail("Skill file digest")
+        if relative == "SKILL.md":
+            has_entrypoint = True
+    if not has_entrypoint:
+        fail("Skill entrypoint")
+actual_skill_paths = set(git("ls-tree", "-r", "--name-only", tag_ref, "--", "skills").decode("utf-8").splitlines())
+if actual_skill_paths != expected_skill_paths:
+    fail("Skill tree inventory")
 if not isinstance(extension, dict) or extension.get("name") != "RELU AI Bridge Companion":
     fail("Chrome Companion name")
 if extension.get("version") != core_version:
@@ -591,8 +783,13 @@ git -C "$verify_repo" cat-file -p "$tag_ref" > "$verify_root/tag-metadata.actual
 cmp -s "$verify_root/tag-metadata.actual" "$release_dir/tag-metadata.txt" || \
   die "tag-metadata.txt가 bundle tag object와 다릅니다"
 git -c core.quotePath=true -C "$verify_repo" ls-tree -r "$release_tag" -- \
-  package.json package-lock.json npm-shrinkwrap.json pnpm-lock.yaml yarn.lock \
+  package.json sdk/package.json package-lock.json npm-shrinkwrap.json pnpm-lock.yaml yarn.lock \
   requirements.txt requirements.lock pyproject.toml uv.lock Cargo.toml Cargo.lock \
+  sdk-dotnet/Relu.AI.Bridge.DesktopConnector.sln \
+  sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj \
+  sdk-dotnet/tests/Relu.AI.Bridge.DesktopConnector.Tests/Relu.AI.Bridge.DesktopConnector.Tests.csproj \
+  examples/wpf-android-log-viewer/WpfAndroidLogViewer.Integration.csproj \
+  skills/manifest.json \
   > "$verify_root/dependency-manifest.actual"
 cmp -s "$verify_root/dependency-manifest.actual" "$release_dir/dependency-manifest.txt" || \
   die "dependency-manifest.txt가 bundle dependency tree와 다릅니다"
