@@ -8,15 +8,18 @@ public sealed class SelectionContextStore : IReluDesktopContextProvider
 {
     private const long MaximumSafeJsonInteger = 9_007_199_254_740_991;
     private readonly object _gate = new();
-    private LogSelection _selection;
+    private LogSelection? _selection;
 
-    public SelectionContextStore(LogSelection initialSelection)
+    public SelectionContextStore(LogSelection? initialSelection = null)
     {
-        Validate(initialSelection);
+        if (initialSelection is not null)
+        {
+            Validate(initialSelection);
+        }
         _selection = initialSelection;
     }
 
-    public LogSelection Current
+    public LogSelection? Current
     {
         get
         {
@@ -36,10 +39,18 @@ public sealed class SelectionContextStore : IReluDesktopContextProvider
         }
     }
 
+    public void Clear()
+    {
+        lock (_gate)
+        {
+            _selection = null;
+        }
+    }
+
     public ValueTask<JsonElement> GetContextAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var selection = Current;
+        var selection = Current ?? throw new ReluContextUnavailableException();
         return ValueTask.FromResult(JsonSerializer.SerializeToElement(new
         {
             logResourceId = selection.LogResourceId,

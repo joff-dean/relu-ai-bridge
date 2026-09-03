@@ -54,11 +54,6 @@ function isExactHttpOrigin(value) {
   }
 }
 
-function isExactConnectorPeer(value) {
-  return isExactHttpOrigin(value)
-    || (typeof value === 'string' && /^relu-desktop:\/\/[a-f0-9]{64}$/u.test(value));
-}
-
 function isIsoTimestamp(value) {
   if (typeof value !== 'string' || value.length > 64) return false;
   const parsed = new Date(value);
@@ -73,7 +68,7 @@ function validateRecord(record, policyEpoch, options) {
   }
   if (!RECORD_ID.test(record.id)
     || !SERVICE_ID.test(record.serviceId)
-    || !isExactConnectorPeer(record.origin)
+    || !isExactHttpOrigin(record.origin)
     || !SHA256.test(record.pageBinding)
     || !SHA256.test(record.contextBinding)
     || !CAPABILITY.test(record.capability)

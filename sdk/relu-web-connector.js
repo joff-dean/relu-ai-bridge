@@ -260,7 +260,7 @@ export class ReluWebConnector {
       throw new Error('Web Crypto is required for connector authentication');
     }
     this.origin = assertPageOrigin(options.origin);
-    this.connectorVersion = String(options.connectorVersion ?? '0.6.0');
+    this.connectorVersion = String(options.connectorVersion ?? '0.7.0');
     this.getContext = options.getContext;
     this.capabilities = new Map(Object.entries(options.capabilities));
     for (const [name, handler] of this.capabilities) {

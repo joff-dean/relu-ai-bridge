@@ -47,7 +47,6 @@ const DEFAULT_SAFE_PERFETTO_SQL_FUNCTIONS = [
 
 const CONNECTOR_ID = /^[a-z][a-z0-9_-]{1,63}$/u;
 const CAPABILITY_NAME = /^[a-z][a-z0-9_.-]{0,63}$/u;
-const DESKTOP_APP_ID = /^[a-zA-Z][a-zA-Z0-9._-]{2,127}$/u;
 const HEADER_NAME = /^[a-z0-9-]{1,64}$/u;
 const ENV_NAME = /^[A-Z_][A-Z0-9_]{0,127}$/u;
 const APPROVAL_POLICIES = new Set(['trusted_always', 'manual']);
@@ -207,8 +206,8 @@ function normalizeCapability(capability, serviceId, index, allowInsecureHttp, en
   const name = String(capability.name ?? '');
   if (!CAPABILITY_NAME.test(name)) throw new Error(`${prefix}.name is invalid`);
   const transport = capability.transport ?? 'browser';
-  if (!['browser', 'desktop', 'http'].includes(transport)) {
-    throw new Error(`${prefix}.transport must be browser, desktop, or http`);
+  if (!['browser', 'http'].includes(transport)) {
+    throw new Error(`${prefix}.transport must be browser or http`);
   }
   const description = String(capability.description ?? name);
   if (!description || Buffer.byteLength(description) > 500) throw new Error(`${prefix}.description is invalid`);
@@ -280,29 +279,19 @@ function normalizeConnectorService(service, index, allowInsecureHttp, environmen
   if (!CONNECTOR_ID.test(id)) throw new Error(`${prefix}.id is invalid`);
   const displayName = String(service.displayName ?? id);
   if (!displayName || Buffer.byteLength(displayName) > 200) throw new Error(`${prefix}.displayName is invalid`);
+  if (Object.hasOwn(service, 'clientKinds')) {
+    throw new Error(`${prefix}.clientKinds is unsupported; central connectors are browser/HTTP only`);
+  }
+  if (Object.hasOwn(service, 'desktopAppIds')) {
+    throw new Error(`${prefix}.desktopAppIds is unsupported; desktop applications use their embedded MCP bridge`);
+  }
   const tokenEnv = String(service.tokenEnv ?? '');
   if (!ENV_NAME.test(tokenEnv)) throw new Error(`${prefix}.tokenEnv is invalid`);
   const token = String(environment[tokenEnv] ?? '');
   if (token.length < 24) throw new Error(`${tokenEnv} must contain at least 24 characters for connector service ${id}`);
-  const clientKinds = service.clientKinds ?? ['browser'];
-  if (!Array.isArray(clientKinds) || clientKinds.length !== 1
-    || clientKinds.some((kind) => !['browser', 'desktop'].includes(kind))
-    || new Set(clientKinds).size !== clientKinds.length) {
-    throw new Error(`${prefix}.clientKinds must contain exactly one of browser or desktop`);
-  }
   const origins = service.origins ?? [];
-  if (!Array.isArray(origins) || origins.length > 32
-    || (clientKinds.includes('browser') && origins.length === 0)
-    || (!clientKinds.includes('browser') && origins.length > 0)) {
-    throw new Error(`${prefix}.origins must contain 1 to 32 exact origins only for browser clients`);
-  }
-  const desktopAppIds = service.desktopAppIds ?? [];
-  if (!Array.isArray(desktopAppIds) || desktopAppIds.length > 1
-    || (clientKinds.includes('desktop') && desktopAppIds.length !== 1)
-    || (!clientKinds.includes('desktop') && desktopAppIds.length > 0)
-    || desktopAppIds.some((appId) => typeof appId !== 'string' || !DESKTOP_APP_ID.test(appId))
-    || new Set(desktopAppIds).size !== desktopAppIds.length) {
-    throw new Error(`${prefix}.desktopAppIds must contain exactly one exact app id only for a desktop client trust domain`);
+  if (!Array.isArray(origins) || origins.length === 0 || origins.length > 32) {
+    throw new Error(`${prefix}.origins must contain 1 to 32 exact browser origins`);
   }
   const capabilities = service.capabilities ?? [];
   if (!Array.isArray(capabilities) || capabilities.length === 0 || capabilities.length > 64) {
@@ -313,15 +302,6 @@ function normalizeConnectorService(service, index, allowInsecureHttp, environmen
   ));
   if (new Set(normalizedCapabilities.map((item) => item.name)).size !== normalizedCapabilities.length) {
     throw new Error(`${prefix}.capability names must be unique`);
-  }
-  if (normalizedCapabilities.some((capability) => (
-    ['browser', 'desktop'].includes(capability.transport) && !clientKinds.includes(capability.transport)
-  ))) {
-    throw new Error(`${prefix}.capability transport must be enabled by clientKinds`);
-  }
-  if (clientKinds.includes('desktop')
-    && normalizedCapabilities.some((capability) => capability.transport !== 'desktop')) {
-    throw new Error(`${prefix}.desktop services may contain only desktop capabilities`);
   }
   const contextSchema = structuredClone(validateConnectorSchema(
     service.contextSchema ?? { type: 'object', properties: {}, required: [], additionalProperties: false },
@@ -361,9 +341,7 @@ function normalizeConnectorService(service, index, allowInsecureHttp, environmen
     bindingFields: [...bindingFields],
     executionGuardFields: [...executionGuardFields],
     executionGuardMode,
-    clientKinds: [...clientKinds],
     origins: [...new Set(origins.map((origin) => exactHttpOrigin(origin, `${prefix}.origins`)))],
-    desktopAppIds: [...desktopAppIds],
     capabilities: normalizedCapabilities,
   };
 }
@@ -437,8 +415,8 @@ export async function loadConfig(options = {}) {
   if ((connectors.websocketPath ?? '/relu/ws') !== '/relu/ws') {
     throw new Error('connectors.websocketPath is fixed to /relu/ws by the connector security contract');
   }
-  if ((connectors.desktopWebsocketPath ?? '/relu/desktop/ws') !== '/relu/desktop/ws') {
-    throw new Error('connectors.desktopWebsocketPath is fixed to /relu/desktop/ws by the desktop connector security contract');
+  if (Object.hasOwn(connectors, 'desktopWebsocketPath')) {
+    throw new Error('connectors.desktopWebsocketPath is unsupported; desktop applications use their embedded MCP bridge');
   }
   const allowInsecureHttp = bool(connectors.allowInsecureHttp, false);
   const connectorServices = (connectors.services ?? []).map((service, index) => normalizeConnectorService(service, index, allowInsecureHttp, environment));
@@ -623,7 +601,6 @@ export async function loadConfig(options = {}) {
     connectors: {
       enabled: connectorEnabled,
       websocketPath: '/relu/ws',
-      desktopWebsocketPath: '/relu/desktop/ws',
       allowInsecureHttp,
       requestTimeoutMs: boundedPositiveInteger(connectors.requestTimeoutMs, 30_000, 60_000, 'connectors.requestTimeoutMs'),
       maxWebSocketMessageBytes: boundedPositiveInteger(connectors.maxWebSocketMessageBytes, 1024 * 1024, 2 * 1024 * 1024, 'connectors.maxWebSocketMessageBytes'),

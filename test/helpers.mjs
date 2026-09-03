@@ -34,7 +34,6 @@ export async function fixture(options = {}) {
     connectors: {
       enabled: true,
       websocketPath: '/relu/ws',
-      desktopWebsocketPath: '/relu/desktop/ws',
       allowInsecureHttp: false,
       requestTimeoutMs: 5000,
       maxWebSocketMessageBytes: 1024 * 1024,

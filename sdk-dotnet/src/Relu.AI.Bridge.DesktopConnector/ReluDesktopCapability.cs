@@ -8,8 +8,8 @@ public delegate ValueTask<JsonElement> ReluDesktopCapabilityHandler(
     CancellationToken cancellationToken);
 
 /// <summary>
-/// 서버 registry에 이미 허용된 capability 이름과 로컬 구현을 연결합니다.
-/// schema, effect, timeout은 서버 설정이 소유합니다.
+/// Binary에 컴파일된 embedded capability 이름과 기존 분석 구현을 연결합니다.
+/// schema, effect와 timeout은 <see cref="ReluEmbeddedServiceDefinition"/>이 소유합니다.
 /// </summary>
 public sealed class ReluDesktopCapability
 {

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import crypto from 'node:crypto';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -8,101 +7,158 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relative) => readFile(path.join(ROOT, relative), 'utf8');
 
-function hmac(token, payload) {
-  return crypto.createHmac('sha256', token).update(payload).digest('hex');
-}
-
-test('desktop .NET SDK consumes the shared raw registration HMAC vectors', async () => {
-  const vector = JSON.parse(await read('compat/desktop-auth-v1.json'));
-  assert.match(vector.description, /TEST-ONLY/u);
-  assert.equal(
-    crypto.createHash('sha256').update(vector.registrationJson, 'utf8').digest('hex'),
-    vector.registrationDigest,
+test('desktop .NET SDK embeds the same-executable MCP and current-user pipe contract', async () => {
+  const definition = await read(
+    'sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluEmbeddedServiceDefinition.cs',
   );
-  assert.equal(hmac(vector.token, vector.serverPayload), vector.serverProof);
-  assert.equal(hmac(vector.token, vector.clientPayload), vector.clientProof);
-  assert.ok(vector.rawRegistrationCases.length > 0);
-  for (const edge of vector.rawRegistrationCases) {
-    assert.match(edge.registrationJson, /분석/u);
-    assert.match(edge.registrationJson, /1\.0/u);
-    assert.match(edge.registrationJson, /1e3/u);
-    assert.equal(
-      crypto.createHash('sha256').update(edge.registrationJson, 'utf8').digest('hex'),
-      edge.registrationDigest,
-    );
-    assert.equal(hmac(vector.token, edge.clientPayload), edge.clientProof);
-  }
+  const host = await read(
+    'sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluEmbeddedBridgeHost.cs',
+  );
+  const stdio = await read(
+    'sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluMcpStdioEntryPoint.cs',
+  );
+  const registrar = await read(
+    'sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluAiClientRegistrar.cs',
+  );
+  const pipePeerVerifier = await read(
+    'sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Internal/EmbeddedPipePeerVerifier.cs',
+  );
+  const integration = await read('examples/wpf-android-log-viewer/ReluWpfIntegration.cs');
+  const project = await read(
+    'sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj',
+  );
 
-  const wire = await read('sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Internal/DesktopWireProtocol.cs');
-  const connector = await read('sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluDesktopConnector.cs');
-  assert.match(wire, /relu-ai-bridge:\/\/loopback\/relu\/desktop\/ws/u);
-  assert.match(wire, /RELU_DESKTOP_CONNECTOR_AUTH/u);
-  assert.match(wire, /SHA256\.HashData\(Encoding\.UTF8\.GetBytes\(registrationJson\)\)/u);
-  assert.match(connector, /writer\.WriteString\("registrationJson", registrationJson\)/u);
-  assert.doesNotMatch(connector, /writer\.WritePropertyName\("registration"\)/u);
+  assert.match(definition, /string version = "0\.7\.0",/u);
+  assert.match(definition, /if \(effect != "read"\)/u);
+  assert.match(definition, /public string Effect => "read";/u);
+  assert.match(definition, /relu-ai-bridge-pipe-v1\\0\{userIdentity\}\\0\{serviceId\}/u);
+  assert.match(definition, /WindowsIdentity\.GetCurrent\(\)/u);
+  assert.match(definition, /identity\.User\?\.Value/u);
+  assert.match(definition, /PipeName = CreatePipeName\(serviceId, GetCurrentUserIdentity\(\)\)/u);
+
+  assert.match(host, /PipeOptions\.Asynchronous \| PipeOptions\.CurrentUserOnly/u);
+  assert.match(host, /pipeOptions \|= PipeOptions\.FirstPipeInstance/u);
+  assert.match(host, /new NamedPipeServerStream\(/u);
+  assert.match(host, /OptionalString\(arguments, "operationId", 128, minimumLength: 8\)/u);
+  assert.doesNotMatch(host, /ClientWebSocket|HttpClient|TcpListener|Socket\s*\(/u);
+
+  assert.match(stdio, /public const string StdioArgument = "--relu-mcp-stdio";/u);
+  assert.match(stdio, /arguments\.Count == 1 && arguments\[0\] == StdioArgument/u);
+  assert.match(stdio, /private const string ProtocolVersion = "2025-06-18";/u);
+  assert.match(stdio, /method == "initialize"/u);
+  assert.match(stdio, /method == "notifications\/initialized"/u);
+  assert.match(stdio, /McpSessionState\.AwaitingInitializedNotification/u);
+  assert.doesNotMatch(
+    stdio,
+    /2026-\d{2}-\d{2}|server\/discover|resultType|cacheScope|ttlMs|-32022/u,
+  );
+  assert.match(stdio, /new BoundedUtf8LineReader\(standardInput, MaximumMessageBytes\)/u);
+  for (const tool of ['list_sessions', 'get_context', 'list_capabilities', 'execute']) {
+    assert.match(stdio, new RegExp(`name = "${tool}"`, 'u'));
+  }
+  assert.match(stdio, /annotations = new \{ readOnlyHint = true \}/u);
+  assert.match(stdio, /instructions = service\.Instructions/u);
+
+  assert.match(registrar, /\["mcp", "add", options\.ServerName, "--", executablePath, ReluMcpStdioEntryPoint\.StdioArgument\]/u);
+  assert.match(registrar, /\["mcp", "add", "--scope", "user", options\.ServerName, "--", executablePath, ReluMcpStdioEntryPoint\.StdioArgument\]/u);
+  assert.doesNotMatch(registrar, /public string ExecutablePath/u);
+  assert.match(registrar, /var executablePath = ResolveCurrentExecutablePath\(\);/u);
+  assert.match(registrar, /ReluAgentRegistrationState\.Conflict/u);
+  assert.match(registrar, /RegistrationInspection\.Unhealthy => new\(/u);
+  assert.match(registrar, /UseShellExecute = false/u);
+  assert.match(registrar, /startInfo\.ArgumentList\.Add\(argument\)/u);
+  assert.match(registrar, /SensitiveEnvironmentName\.IsMatch\(name\)/u);
+  assert.match(registrar, /startInfo\.Environment\.Remove\(name\)/u);
+  assert.match(registrar, /InspectRegistration\(client, verified\.StandardOutput, options\.ServerName, executablePath\)/u);
+  assert.match(registrar, /ReluWindowsProcessSecurity\.IsElevatedOrUnknown\(\)/u);
+  assert.match(registrar, /relu-ai-bridge-registrar-mutex-v1\\0\{userIdentity\}\\0\{serverName\}/u);
+  assert.match(registrar, /ReluEmbeddedServiceDefinition\.GetCurrentUserIdentity\(\)/u);
+  assert.match(registrar, /Global\\\\Relu\.AI\.Bridge\.EndViewer\.McpRegistration/u);
+  assert.match(registrar, /"Programs", "OpenAI", "Codex", "bin", "codex\.exe"/u);
+  assert.match(registrar, /ReluWindowsAuthenticode\.Verify\(executablePath\)/u);
+  assert.match(registrar, /"OpenAI OpCo, LLC"/u);
+  assert.match(registrar, /"Anthropic, PBC"/u);
+  assert.doesNotMatch(registrar, /"OpenAI, LLC"|"Anthropic PBC"/u);
+
+  assert.match(pipePeerVerifier, /GetNamedPipeClientProcessId/u);
+  assert.match(pipePeerVerifier, /GetNamedPipeServerProcessId/u);
+  assert.match(pipePeerVerifier, /QueryFullProcessImageName/u);
+  assert.match(pipePeerVerifier, /Environment\.ProcessPath/u);
+  assert.match(stdio, /EmbeddedPipePeerVerifier\.VerifyServer\(pipe\)/u);
+  assert.match(host, /EmbeddedPipePeerVerifier\.VerifyClient\(pipe\)/u);
+
+  assert.match(integration, /ReluMcpStdioEntryPoint\.IsStdioMode\(arguments\)/u);
+  assert.match(integration, /ReluMcpStdioEntryPoint\.RunAsync\(/u);
+  assert.match(integration, /await Host\.TryStartAsync\(cancellationToken\)/u);
+  assert.match(integration, /ReluWpfIntegrationStartResult/u);
+  assert.match(integration, /_registrar\.RegisterUserScopeAsync\(/u);
+  assert.match(integration, /LogSelection\? initialSelection = null/u);
+  assert.match(integration, /_contextStore\.Clear/u);
+  assert.doesNotMatch(
+    integration,
+    /ReluConnectorSecret|SecretProvider|desktopWebsocketPath|\.mcp\.json|\bEndpoint\s*=/u,
+  );
+
+  assert.match(project, /<Version>0\.7\.0<\/Version>/u);
+  assert.match(project, /<PackageReadmeFile>NUGET_README_KO\.md<\/PackageReadmeFile>/u);
+  assert.match(project, /<PackageLicenseFile>LICENSE<\/PackageLicenseFile>/u);
+  assert.match(project, /<RepositoryUrl>https:\/\/github\.com\/joff-dean\/relu-ai-bridge<\/RepositoryUrl>/u);
+  assert.match(project, /<IsPackable>true<\/IsPackable>/u);
+  assert.doesNotMatch(project, /<PackageReference\b/u);
 });
 
-test('desktop .NET SDK and WPF sample preserve local security boundaries', async () => {
-  const sourceRoot = path.join(ROOT, 'sdk-dotnet');
-  const exampleRoot = path.join(ROOT, 'examples/wpf-android-log-viewer');
-  async function collect(directory) {
-    const output = [];
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      if (entry.isDirectory() && (entry.name === 'bin' || entry.name === 'obj')) continue;
-      const absolute = path.join(directory, entry.name);
-      if (entry.isDirectory()) output.push(...await collect(absolute));
-      else output.push(absolute);
-    }
-    return output;
-  }
-  const files = [...await collect(sourceRoot), ...await collect(exampleRoot)];
-  const text = (await Promise.all(files.filter((file) => /\.(?:cs|csproj)$/u.test(file)).map((file) => readFile(file, 'utf8')))).join('\n');
+test('embedded WPF capabilities remain bounded, schema-checked, and selection-bound', async () => {
+  const host = await read(
+    'sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluEmbeddedBridgeHost.cs',
+  );
+  const framing = await read(
+    'sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Internal/EmbeddedPipeProtocol.cs',
+  );
+  const schemas = await read(
+    'sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Internal/EmbeddedJsonSchema.cs',
+  );
+  const contextProtocol = await read(
+    'sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Internal/EmbeddedContextProtocol.cs',
+  );
+  const pipePeerVerifier = await read(
+    'sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Internal/EmbeddedPipePeerVerifier.cs',
+  );
+  const capabilities = await read('examples/wpf-android-log-viewer/AndroidLogCapabilities.cs');
+  const allSources = `${host}\n${framing}\n${schemas}\n${contextProtocol}\n${pipePeerVerifier}\n${capabilities}`;
 
-  assert.match(text, /\/relu\/desktop\/ws/u);
-  assert.match(text, /socket\.Options\.Proxy = null/u);
-  assert.match(text, /selectionRevision/u);
-  assert.match(text, /selectionId/u);
-  assert.match(text, /RandomNumberGenerator\.GetBytes\(16\)/u);
-  assert.match(text, /WaitAsync\(execution\.Token\)/u);
-  assert.match(text, /ReleaseWhenCompleted/u);
-  assert.match(text, /NotifyContextChangedAsync\(\s*Action updateContext/u);
-  assert.match(text, /SendCurrentContextUpdateAsync/u);
-  assert.match(text, /await SendCurrentContextUpdateAsync\(socket, connectionLifetime\.Token\)/u);
-  assert.match(text, /SendGuardedSuccessAsync/u);
-  assert.match(text, /SendSerializedWhileGateHeldAsync/u);
-  assert.match(text, /requiredContextGeneration\.Value != _contextGeneration/u);
-  assert.match(text, /Volatile\.(?:Read|Write)/u);
-  assert.match(text, /<PackageReadmeFile>NUGET_README_KO\.md<\/PackageReadmeFile>/u);
-  assert.match(text, /<PackageLicenseFile>LICENSE<\/PackageLicenseFile>/u);
-  assert.match(text, /<RepositoryUrl>https:\/\/github\.com\/joff-dean\/relu-ai-bridge<\/RepositoryUrl>/u);
-  assert.match(text, /<IsPackable>false<\/IsPackable>/u);
-  assert.doesNotMatch(text, /Func<bool>\s+IsActive/u);
-  assert.match(text, /CryptographicOperations\.ZeroMemory/u);
-  assert.match(text, /Deliberately process-memory only/u);
-  assert.doesNotMatch(text, /SetRequestHeader\s*\(/u);
-  assert.doesNotMatch(text, /System\.Windows\.Automation|UIAutomation|Process\.Start/u);
-  assert.doesNotMatch(text, /Environment\.GetCommandLineArgs|GetEnvironmentVariable/u);
-  assert.doesNotMatch(text, /File\.(?:Write|Append)|FileStream/u);
-  assert.doesNotMatch(text, /<PackageReference\b/u);
+  assert.match(host, /RequiredContextBinding\(arguments\)/u);
+  assert.match(host, /EmbeddedContextProtocol\.CreateBinding\(projection\)/u);
+  assert.match(allSources, /SHA256\.HashData/u);
+  assert.match(allSources, /EnumerateObject\(\)\.OrderBy/u);
+  assert.match(host, /lease\.Generation != CurrentContextLease\(\)\.Generation/u);
+  assert.match(host, /lease\.Token\.IsCancellationRequested/u);
+  assert.match(host, /EmbeddedContextProtocol\.SemanticallyEquals\(projection, currentProjection\)/u);
+  assert.match(host, /EmbeddedJsonSchema\.ValidateInstance\(\s*boundedParameters, capability\.InputSchema/u);
+  assert.match(host, /EmbeddedJsonSchema\.ValidateInstance\(\s*bounded, capability\.OutputSchema/u);
+  assert.match(host, /_handlerSlots\.ReleaseWhenCompleted\(requestId, handlerTask \?\? Task\.CompletedTask\)/u);
 
-  const service = JSON.parse(await read('config/android-log-viewer.desktop.service.example.json'));
-  assert.deepEqual(service.clientKinds, ['desktop']);
-  assert.deepEqual(service.origins, []);
-  assert.deepEqual(service.desktopAppIds, ['com.relu.AndroidLogViewer']);
-  assert.deepEqual(service.bindingFields, ['logResourceId', 'datasetRevision']);
-  assert.deepEqual(service.executionGuardFields, [
-    'logResourceId', 'datasetRevision', 'selectionId', 'selectionRevision', 'selection',
-  ]);
-  assert.ok(service.capabilities.every((capability) => capability.transport === 'desktop'));
-  assert.ok(service.capabilities.every((capability) => capability.effect === 'read'));
-  assert.deepEqual(service.capabilities.map(({ name }) => name).sort(), [
-    'find_anomalies',
-    'get_extracted_sections',
-    'get_log_excerpt',
-    'get_selection_series',
+  assert.match(framing, /BinaryPrimitives\.WriteInt32BigEndian/u);
+  assert.match(framing, /length <= 0 \|\| length > maximumBytes/u);
+  assert.match(schemas, /additionalProperties/u);
+  assert.match(schemas, /ValidateInstance/u);
+
+  const capabilityNames = [
     'get_selection_stats',
-  ]);
-  const series = service.capabilities.find(({ name }) => name === 'get_selection_series');
-  assert.equal(series.outputSchema.properties.series.maxItems, 6);
-  assert.equal(series.outputSchema.properties.series.items.properties.points.maxItems, 1000);
+    'get_selection_series',
+    'get_log_excerpt',
+    'get_extracted_sections',
+    'find_anomalies',
+  ];
+  for (const name of capabilityNames) {
+    assert.match(capabilities, new RegExp(`"${name}"`, 'u'));
+  }
+  assert.match(capabilities, /maxItems = 6/u);
+  assert.match(capabilities, /maxItems = 1000/u);
+  assert.match(capabilities, /maxItems = 200/u);
+  assert.match(capabilities, /contextGuardFields:/u);
+  assert.match(capabilities, /"selectionRevision"/u);
+  assert.match(capabilities, /prompt-like[\s\S]*untrusted data/u);
+
+  assert.doesNotMatch(allSources, /SetRequestHeader\s*\(|System\.Windows\.Automation|UIAutomation/u);
+  assert.doesNotMatch(allSources, /Environment\.GetEnvironmentVariable|File\.(?:Write|Append)/u);
 });

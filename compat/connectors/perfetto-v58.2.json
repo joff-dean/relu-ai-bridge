@@ -5,9 +5,9 @@
     "number": 1,
     "id": "perfetto",
     "name": "Perfetto",
-    "version": "0.6.0",
+    "version": "0.7.0",
     "adapter_contract": "v58",
-    "compatible_relu_core_versions": ["0.6.0"]
+    "compatible_relu_core_versions": ["0.7.0"]
   },
   "public_baseline": {
     "repository": "https://github.com/google/perfetto.git",

@@ -16,7 +16,7 @@ public sealed class AndroidLogViewerViewModel : INotifyPropertyChanged
     {
         _relu = relu ?? throw new ArgumentNullException(nameof(relu));
         _uiContext = uiContext ?? throw new ArgumentNullException(nameof(uiContext));
-        _relu.Connector.StatusChanged += OnConnectorStatusChanged;
+        _relu.Host.StatusChanged += OnConnectorStatusChanged;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -62,7 +62,11 @@ public sealed class AndroidLogViewerViewModel : INotifyPropertyChanged
     public Task OnWindowActivationChangedAsync(bool active, CancellationToken cancellationToken = default) =>
         _relu.WindowActivationChangedAsync(active, cancellationToken);
 
-    private void OnConnectorStatusChanged(ReluDesktopConnectorStatus status)
+    /// <summary>로그 close, dataset unload 또는 selection clear 이벤트에서 await하여 호출합니다.</summary>
+    public Task OnSelectionClearedAsync(CancellationToken cancellationToken = default) =>
+        _relu.ClearSelectionAsync(cancellationToken);
+
+    private void OnConnectorStatusChanged(ReluEmbeddedBridgeStatus status)
     {
         _uiContext.Post(_ => ConnectionStatus = status.State.ToString(), null);
     }

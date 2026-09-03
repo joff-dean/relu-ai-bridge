@@ -200,7 +200,10 @@ fi
 if [ "$plugin_change" -eq 0 ] && [ "$adapter_change" -eq 0 ] && \
    [ "$enable_method" = none ]; then
   info "plugin/adapter overlay와 기본 활성화가 이미 최신입니다"
-  "$SCRIPT_DIR/verify-integration.sh" "$perfetto_dir"
+  rm -rf -- "$stage_root"
+  verify_arguments=(--target "$target_kind")
+  if [ -n "$expected_head" ]; then verify_arguments+=(--expected-head "$expected_head"); fi
+  "$SCRIPT_DIR/verify-integration.sh" "${verify_arguments[@]}" "$perfetto_dir"
   info "통합 완료: $perfetto_dir"
   exit 0
 fi
@@ -341,7 +344,12 @@ PY
   none) info "plugin이 이미 기본 활성화되어 있습니다" ;;
 esac
 
-"$SCRIPT_DIR/verify-integration.sh" "$perfetto_dir"
+# 일부 overlay가 이미 최신이면 stage에 그 복사본이 남을 수 있다. 검증기는 모든
+# 예상 밖 untracked source를 거부하므로 transaction 검증 전에 staging을 제거한다.
+rm -rf -- "$stage_root"
+verify_arguments=(--target "$target_kind")
+if [ -n "$expected_head" ]; then verify_arguments+=(--expected-head "$expected_head"); fi
+"$SCRIPT_DIR/verify-integration.sh" "${verify_arguments[@]}" "$perfetto_dir"
 transaction_active=0
 info "통합 rollback 백업: $transaction_backup"
 info "통합 완료: $perfetto_dir"

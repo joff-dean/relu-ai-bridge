@@ -42,7 +42,7 @@ test('HTTP MCP lifecycle, persistent approval, and command profile work end to e
 
   const health = await (await fetch(`${baseUrl}/health`)).json();
   assert.equal(health.name, 'relu-ai-bridge');
-  assert.equal(health.version, '0.6.0');
+  assert.equal(health.version, '0.7.0');
   assert.equal(health.approvalPolicy, 'manual');
 
   const initialized = await rpc(baseUrl, env.config.server.token, { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });

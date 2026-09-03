@@ -1,6 +1,6 @@
 # ChatGPT·Codex MCP 연결
 
-RELU AI Bridge는 browser/desktop 분석 session을 노출하는 Streamable HTTP MCP endpoint를 제공한다. 기본 지원 경로는 Claude이며, 이 문서는 선택적으로 Codex/ChatGPT를 연결할 때 사용한다.
+RELU AI Bridge 중앙 서버는 Perfetto/browser/API 분석 session을 노출하는 Streamable HTTP MCP endpoint를 제공한다. EndViewer desktop은 이 endpoint에 들어오지 않고 같은 `EndViewer.exe`의 `relu-endviewer` stdio MCP를 사용한다. 기본 지원 경로는 Claude이며, 이 문서는 선택적으로 중앙 서버를 Codex/ChatGPT에 연결할 때 사용한다.
 
 ```text
 URL:            http://127.0.0.1:5746/mcp
@@ -96,7 +96,7 @@ default_tools_approval_mode = "writes"
 `trusted_always`는 로컬의 always-eligible 호출을 자동 허용하지만 Codex/ChatGPT
 플랫폼 자체의 approval mode나 사용자 의도를 바꾸지 않는다.
 
-현재 Perfetto/WPF 선택 구간의 분석 절차도 함께 쓰려면 project scope Skill을 설치한다.
+현재 Perfetto 또는 중앙 browser Connector 선택 구간의 공통 분석 절차도 함께 쓰려면 project scope Skill을 선택적으로 설치한다.
 
 ```bash
 ./scripts/skills/install-skills.sh \
@@ -109,6 +109,16 @@ default_tools_approval_mode = "writes"
 PowerShell 명령, checksum/갱신/제거 계약은 [분석 Skill 설계](SKILLS_KO.md)를 따른다.
 Skill은 권한을 추가하거나 승인을 대신하지 않고 live `list_capabilities`만 실행 계약으로
 사용한다.
+
+EndViewer에는 이 Skill을 설치하지 않는다. EndViewer 전용 분석 순서와 prompt-injection
+경계는 서명된 실행 파일의 MCP `2025-06-18` `initialize` `instructions`에 포함되며, 앱의 자동 user-scope
+등록만 사용한다.
+
+이 user-scope 등록은 같은 Windows 계정의 모든 Codex 프로젝트에 보이며 `active`는 권한
+경계가 아니다. 승인된 프로젝트에서만 사용하고 프로젝트 격리가 필요하면 managed MCP
+정책을 적용한다. EndViewer GUI host는 사용자별 단일 instance이고, 선택 전에는
+Context/분석 호출이 `CONTEXT_UNAVAILABLE`을 반환한다. Public repository에는 SDK/WPF
+통합 골격만 있으며 proprietary EndViewer 실행 파일은 포함하지 않는다.
 
 ## 2B. ChatGPT web/Work 연결
 
@@ -178,10 +188,10 @@ Token을 입력한 뒤 해당 요청이 허용하는 결정 중 하나를 고른
 - `항상 허용`: 같은 scope를 재시작 후에도 허용
 - `거부`: pending request 거부
 
-Scope의 connector peer는 browser의 server-observed exact Origin 또는 allowlist의
-desktop app ID에서 도출한 `relu-desktop://<sha256>` opaque trust-domain key다. 별도의
-page/application-instance binding과 `bindingFields` resource도 scope에 결합되므로
-다른 탭·desktop 설치·dataset으로 권한이 확장되지 않는다.
+Scope의 connector peer는 browser에서 server가 관찰한 exact Origin이다. 별도의
+page-instance binding과 `bindingFields` resource도 scope에 결합되므로 다른 탭이나
+dataset으로 권한이 확장되지 않는다. EndViewer desktop은 이 중앙 approval scope를
+사용하지 않고, 자체 read-only embedded MCP와 guarded `contextBinding`을 사용한다.
 
 결정 후 원래 MCP tool call을 다시 실행한다. 수동 영구 grant는 같은 화면에서
 철회한다. `trusted_always` 구성 정책은 개별 grant가 아니며 설정을 `manual`로 바꾸고
@@ -212,7 +222,10 @@ Bridge를 재시작해 해제한다. 정책 전환 시 이전 pending/grant는 �
 
 ### RELU session이 0개
 
-Browser/desktop 서비스가 주 config의 `connectors.services`에 등록됐는지, exact Origin 또는 app ID와 service별 `tokenEnv`가 맞는지, SDK status가 connected인지 확인한다. Service token은 control token과 달라야 한다.
+Browser 서비스가 주 config의 `connectors.services`에 등록됐는지, exact Origin과
+서비스별 `tokenEnv`가 맞는지, Web SDK status가 connected인지 확인한다. Service token은
+control token과 달라야 한다. EndViewer는 중앙 session 목록에 나타나지 않으며
+`relu-endviewer` stdio MCP의 `list_sessions`에서 확인한다.
 
 ### Perfetto client가 0개
 

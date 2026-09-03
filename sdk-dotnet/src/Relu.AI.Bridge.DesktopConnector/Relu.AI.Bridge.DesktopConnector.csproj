@@ -9,10 +9,10 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);1591</NoWarn>
     <PackageId>Relu.AI.Bridge.DesktopConnector</PackageId>
-    <Version>0.6.0</Version>
+    <Version>0.7.0</Version>
     <Title>RELU AI Bridge Desktop Connector</Title>
     <Authors>RELU AI Bridge</Authors>
-    <Description>Authenticated local desktop connector SDK for RELU AI Bridge.</Description>
+    <Description>Self-contained embedded MCP and same-user named-pipe SDK for RELU AI Bridge.</Description>
     <PackageTags>relu;ai;bridge;mcp;desktop;connector</PackageTags>
     <PackageReadmeFile>NUGET_README_KO.md</PackageReadmeFile>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>

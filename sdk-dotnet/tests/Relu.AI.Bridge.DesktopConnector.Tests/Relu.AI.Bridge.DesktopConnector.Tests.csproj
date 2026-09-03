@@ -10,6 +10,5 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj" />
-    <None Include="../../../compat/desktop-auth-v1.json" Link="desktop-auth-v1.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

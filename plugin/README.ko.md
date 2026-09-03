@@ -37,9 +37,10 @@ JavaScript 메모리에만 둔다. localStorage나 Perfetto settings에는 쓰�
 `RELU AI Bridge 자동 연결`이 켜져 있으면 새 trace를 열 때 자동 연결한다. 상태
 표시줄의 RELU 항목에서 연결 상태와 session/role을 확인할 수 있다.
 
-bridge의 durable session assignment가 page reload 뒤에도 복원되도록 trace별
-client ID는 현재 열린 trace plugin instance의 메모리에만 저장한다. WebSocket
-재연결 동안에는 유지되지만 page reload나 trace 재오픈 시 새 ID가 생성된다.
+bridge의 durable session assignment는 같은 trace plugin instance의 WebSocket
+재연결 뒤에는 복원되지만 page reload나 trace 재오픈 뒤에는 상속되지
+않도록, trace별 client ID를 현재 열린 plugin instance의 메모리에만 저장한다.
+WebSocket 재연결 동안에는 유지되지만 page reload나 trace 재오픈 시 새 ID가 생성된다.
 Perfetto trace UUID는 content hash가 아니므로 UUID를 key로 권한을 복원하지 않는다.
 token이나 trace 내용은 이
 client ID에 포함하지 않는다.

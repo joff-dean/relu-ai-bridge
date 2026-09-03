@@ -2,16 +2,20 @@
 
 ## 목적
 
-RELU 분석 Skill은 Claude/Codex가 Perfetto 또는 사내 Android 로그 시각화 도구의 현재 선택 구간을 일관된 절차로 조사하도록 돕는다. 사람이 AI client와 분석 도구를 실행해 둔 상태를 전제로 하며, Skill이 모델을 자동 실행하거나 화면을 감시하지 않는다.
+설치형 RELU 분석 Skill은 Claude/Codex가 중앙 bridge에 연결된 Perfetto 또는 browser 기반 사내 분석 도구의 현재 선택 구간을 일관된 절차로 조사하도록 돕는다. 사람이 AI client와 분석 도구를 실행해 둔 상태를 전제로 하며, Skill이 모델을 자동 실행하거나 화면을 감시하지 않는다.
+
+EndViewer 같은 embedded Windows 앱에는 이 Skill을 설치하지 않는다. EndViewer 분석 절차는
+서명된 실행 파일의 MCP `2025-06-18` `initialize` 응답에 포함되므로 최종 사용자는
+`EndViewer.exe`만 실행한다.
 
 역할은 다음처럼 분리한다.
 
 ```text
-Perfetto / WPF 분석기
+Perfetto / browser 분석기
   └─ 현재 resource, selection, revision과 bounded 분석 Capability 제공
           │
           ▼
-RELU AI Bridge
+중앙 RELU AI Bridge
   └─ 인증, server-owned registry, schema, 승인, 제한, stale selection 차단
           │
           ▼
@@ -23,7 +27,7 @@ Skill은 데이터나 실행 권한을 추가하지 않는다. 실제로 가능�
 
 ## 정본 구조
 
-저장소의 `skills/`가 유일한 배포 원본이다.
+중앙 workflow에서 선택적으로 설치하는 Skill은 저장소의 `skills/`가 유일한 배포 원본이다.
 
 ```text
 skills/
@@ -48,7 +52,8 @@ skills/
 
 ## 설치 위치
 
-설치기는 symlink나 junction을 만들지 않고 정본을 복사한다.
+설치기는 symlink나 junction을 만들지 않고 정본을 복사한다. 이 절차는 중앙
+Perfetto/browser workflow 전용이며 EndViewer 연결의 전제 조건이 아니다.
 
 | Client | 사용자 범위 | 프로젝트 범위 |
 | --- | --- | --- |
@@ -192,11 +197,16 @@ Skill은 local approval policy를 선택하거나 바꾸지 않는다. 새 설�
 정책이어도 UI 선택 변경이나 annotation처럼 effect가 있는 Capability는 사용자가
 명시적으로 요청한 경우에만 실행하며, timeout/ambiguous mutation을 자동 재시도하지 않는다.
 
-## WPF Android 로그 Connector 계약
+## Android 로그 참고자료와 embedded EndViewer의 차이
 
-WPF 프로그램을 Connector로 추가할 때 Skill 파일을 WPF에 포함하거나 로그와 함께 전송할 필요가 없다. WPF는 분석 데이터만 RELU에 제공하고, Skill은 검증된 RELU release에서 Claude/Codex 쪽에 설치한다.
+`references/android-log-viewer.md`는 설치형 Skill을 사용하는 중앙 browser Connector의
+도메인 참고자료다. EndViewer 같은 WPF 앱은 이 파일을 사용자 장비에 따로 설치하지
+않는다. 동일한 분석 원칙 중 제품에 필요한 부분을 검토해
+`ReluEmbeddedServiceDefinition.instructions`에 컴파일하고, Capability/schema/handler도
+서명된 EndViewer binary가 소유한다.
 
-권장 Context 형태는 다음과 같다. 실제 schema는 server registry가 소유한다.
+권장 Context 형태는 다음과 같다. Embedded EndViewer의 실제 schema와 guard field는
+application source가 소유한다.
 
 ```json
 {
@@ -217,15 +227,26 @@ WPF 프로그램을 Connector로 추가할 때 Skill 파일을 WPF에 포함하�
 | --- | --- | --- |
 | 선택 통계 | `get_selection_stats` | duration/sample/warning/error 수와 최대 200개 name/value/unit metric |
 | 차트 series | `get_selection_series` | 최대 6개 name/unit series, series당 최대 1,000개 timestamp/value point |
-| 기존 텍스트 추출 | `get_extracted_sections` | 최대 100개 kind/start/end/text section, text당 최대 16,000자 |
+| 기존 텍스트 추출 | `get_extracted_sections` | 최대 100개 kind/start/end/text section, text당 최대 65,536자 |
 | 이상 후보 | `find_anomalies` | 최대 100개 timestamp/severity/summary/evidence 후보 |
-| 원문 근거 | `get_log_excerpt` | 최대 200개 timestamp/level/tag/message line, message당 최대 4,000자 |
+| 원문 근거 | `get_log_excerpt` | 최대 200개 timestamp/level/tag/message line, message당 최대 8,192자 |
 
-현재 샘플에는 UI mutation이 없다. 나중에 `focus_range`나 `add_annotation`을 추가한다면 server registry에 별도 effect와 schema를 선언하고 mutation마다 `operationId`를 요구해야 한다.
+현재 embedded 샘플은 read-only Capability만 허용한다. 나중에 `focus_range`나
+`add_annotation` 같은 mutation을 추가하려면 embedded protocol version, effect/preview,
+중복 방지 `operationId`, timeout 뒤 ambiguous 판정과 별도 승인 경계를 먼저 설계해야 한다.
 
-Context의 `bindingFields`에는 최소한 `logResourceId`와 `datasetRevision`처럼 데이터 정체성을 결정하는 값을 포함한다. `executionGuardFields`에는 top-level `selectionId`, `selectionRevision`과 전체 `selection` 객체를 포함해 exact `selection.startMs`/`selection.endMs`까지 실행 직전에 검증한다. 새 로그를 열거나 dataset 내용이 바뀌면 이전 persistent approval이 그대로 확대 적용되지 않도록 resource binding과 policy scope를 바꾼다.
+Embedded Context의 `contextGuardFields`에는 `logResourceId`, `datasetRevision`,
+`selectionId`, `selectionRevision`과 전체 `selection` 객체를 포함한다. `get_context`는 이
+projection의 canonical SHA-256 `contextBinding`을 반환하고, `execute`는 호출 전·후에 같은
+binding과 generation인지 확인한다. 새 로그를 열거나 dataset/selection이 바뀌면 진행 중
+분석을 취소하고 새 Context부터 시작한다. Read-only embedded 경로에는 중앙 persistent
+approval/grant를 적용하지 않는다.
 
-표의 개수·문자열 상한과 별도로 Bridge의 `connectors.maxResultBytes`와 .NET SDK outbound message 상한 중 더 작은 전체 byte 제한도 만족해야 한다. 통계/series/excerpt에 적용 filter, timebase, truncation, dropped record, parser/sampling version 같은 provenance가 필요하면 server registry schema와 분석 엔진 모델을 함께 version-up해 명시적으로 추가한다. 반대로 전체 파일 경로, 인증정보, 전체 로그와 무제한 chart point를 Context에 넣지 않는다.
+표의 개수·문자열 상한과 별도로 embedded host의 `MaximumMessageBytes` 전체 byte 제한도
+만족해야 한다. 통계/series/excerpt에 적용 filter, timebase, truncation, dropped record,
+parser/sampling version 같은 provenance가 필요하면 application schema와 분석 엔진 모델을
+함께 version-up해 명시적으로 추가한다. 반대로 전체 파일 경로, 인증정보, 전체 로그와
+무제한 chart point를 Context에 넣지 않는다.
 
 ## Prompt injection과 지침 공급 경계
 

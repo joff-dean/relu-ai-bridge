@@ -8,6 +8,13 @@ public interface IReluDesktopContextProvider
     ValueTask<JsonElement> GetContextAsync(CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// 분석 대상이나 선택 구간이 아직 없어 context를 만들 수 없을 때 provider가 던지는 고정 예외입니다.
+/// Bridge는 이를 <c>CONTEXT_UNAVAILABLE</c> 응답으로 안전하게 변환합니다.
+/// </summary>
+public sealed class ReluContextUnavailableException() :
+    Exception("No analysis context is currently selected.");
+
 /// <summary>Bridge가 요청한 context projection입니다.</summary>
 public sealed record ReluContextGuard(
     IReadOnlyList<string> Fields,

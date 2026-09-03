@@ -1,5 +1,16 @@
 # RELU AI Bridge MCP 도구 계약
 
+이 문서는 두 MCP 표면을 구분한다.
+
+- **Embedded desktop**: 같은 `EndViewer.exe`의 `ReluMcpStdioEntryPoint`가 stdio MCP를
+  제공하고 실행 중 `ReluEmbeddedBridgeHost`와 `CurrentUserOnly` named pipe로 통신한다.
+  별도 RELU/Node/port/token/local JSON/project `.mcp.json`은 없다.
+- **중앙 bridge**: Perfetto/browser와 optional coding 도구를 loopback HTTP MCP로
+  제공한다. 이 경로만 중앙 config, port와 audience별 credential을 사용한다.
+
+두 표면은 핵심 generic 도구 이름을 공유할 수 있지만 서로의 session을 fallback/proxy하지
+않는다. Desktop 앱을 중앙 `/relu/desktop/ws`에 등록하는 경로는 지원하지 않는다.
+
 ## 범용 도구
 
 Claude/Codex는 서비스 종류를 가정하기 전에 이 네 도구로 discovery한다.
@@ -11,7 +22,9 @@ Claude/Codex는 서비스 종류를 가정하기 전에 이 네 도구로 discov
 | `list_capabilities` | 서버가 허용한 action/schema/effect 조회 | 데이터 원문 없음 | 없음 |
 | `execute` | 한 Capability 실행 | parameter/result 가능 | capability scope 검사 |
 
-새 `init` 설정은 `approvals.policy:"trusted_always"`다. `always` 결정을 허용하는
+Embedded EndViewer의 기본 Capability는 read-only이며 별도 RELU 승인 없이 실행한다.
+입력·출력 상한과 stale-selection guard는 항상 강제된다. 중앙 bridge의 새 `init` 설정은
+`approvals.policy:"trusted_always"`다. `always` 결정을 허용하는
 일반 보호 호출은 같은 호출에서 즉시 실행되고 pending/grant를 만들지 않는다.
 `manual` 설정에서는 미승인 호출이 `APPROVAL_REQUIRED`를 반환하며 Admin에서 결정한
 뒤 같은 호출을 다시 실행한다. 결과 불명 mutation 판정처럼 `once/deny`만 허용한
@@ -26,7 +39,12 @@ Claude/Codex는 서비스 종류를 가정하기 전에 이 네 도구로 discov
 }
 ```
 
-둘 다 생략할 수 있다. 반환 session에는 `id`, `serviceId`, `serviceName`, `clientKind`, 허용된 desktop app이면 `appId`, opaque client/page/resource/session key, `active`, timestamp와 Capability 이름만 있다. `active`는 connector self-asserted 정렬 hint이므로 변경 대상을 이것만 보고 자동 선택하지 않는다. Stable instance ID, page title, URL과 Context는 없다. Perfetto client는 `perfetto:<client-id>` session으로 함께 보인다.
+둘 다 생략할 수 있다. Embedded 표면은 현재 EndViewer instance의 opaque session ID,
+service ID/name, `active`, connector version과 Capability 이름만 반환한다. 중앙 표면은 service, opaque
+client/page/resource/session key와 같은 bounded metadata를 반환하고 Perfetto client는
+`perfetto:<client-id>` session으로 함께 보인다. `active`는 정렬 hint이므로 변경 대상을
+이것만 보고 자동 선택하지 않는다. 사용자명, stable instance, 전체 경로, page title/URL과
+Context 원문은 목록에 없다.
 
 ### `get_context`
 
@@ -36,6 +54,7 @@ Claude/Codex는 서비스 종류를 가정하기 전에 이 네 도구로 discov
 }
 ```
 
+Embedded에서는 별도 승인 창 없이 현재 selection guard를 검사하고 반환한다. 중앙
 `trusted_always`에서는 별도 승인 창 없이 현재 policy scope를 검사하고 반환한다.
 `manual`에서는 첫 미승인 호출이 `APPROVAL_REQUIRED`다. Generic Context는 service
 `contextSchema`를 통과한 값이고, Perfetto Context는 trace info와 현재 area selection이다.
@@ -66,14 +85,31 @@ Claude/Codex는 서비스 종류를 가정하기 전에 이 네 도구로 discov
 }
 ```
 
-이 목록은 browser/desktop 광고가 아니라 server registry와 인증된 client 구현의 검증된 교집합이다.
+Embedded 목록은 EndViewer의 검토·서명된 service definition과 실제 handler의 교집합이다.
+분석 instructions도 이 definition의 MCP `2025-06-18` `initialize` 응답에 컴파일되어 별도 Skill
+설치 없이 제공된다. 중앙 목록은 server registry와 인증된 browser 구현의 검증된
+교집합이다. 어느 경로에서도 모델이나 Context가 이름/schema/effect를 추가하지 못한다.
 
 ### `execute`
+
+중앙 browser/Perfetto 표면은 현재 server snapshot으로 Context를 묶는다.
 
 ```json
 {
   "sessionId": "relu_...",
   "action": "get_stats",
+  "parameters": {}
+}
+```
+
+Embedded EndViewer 표면에서는 같은 호출에 직전 `get_context`가 반환한 64자리
+`contextBinding`을 반드시 넣는다.
+
+```json
+{
+  "sessionId": "relu_embedded_...",
+  "action": "get_selection_stats",
+  "contextBinding": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "parameters": {}
 }
 ```
@@ -89,26 +125,23 @@ UI/data/external mutation은 unique `operationId`가 추가로 필요하다.
 }
 ```
 
-Bridge는 정적 input schema를 호출 전, output schema를 반환 전 검사한다. `execute`에 임의 URL, method, headers, script, selector나 command를 넣는 것은 지원되지 않는다.
-`connectors.maxResultBytes`는 항목별 제한이 아니라 직렬화한 Capability 결과 전체의
-합산 byte 제한이므로, array의 `maxItems`·string의 `maxLength`와 함께 적용된다.
+Host는 정적 input schema를 호출 전, output schema를 반환 전 검사한다. `execute`에 임의
+URL, method, headers, script, selector나 command를 넣는 것은 지원되지 않는다. 결과 전체
+byte 제한은 항목별 `maxItems`/`maxLength`와 함께 적용된다.
 
-Desktop selection 분석에서는 `get_context`가 반환한 dataset/selection revision과 전체
-selection 범위를 먼저 기록한다. Bridge는 server snapshot과 `executionGuardFields`
-projection을 dispatch 직전
-재검사하고 .NET SDK도 handler 전후의 live Context를 비교한다. 선택이 바뀌면
-connector는 내부 failure code `CONTEXT_CHANGED`를 보낸다. Core는 connector가 보낸
-raw detail을 반사하지 않고 이 allowlist code를 고정 MCP 오류 문구
-`Connector selection context changed; call get_context and retry`로 변환한다. Read-only
+Embedded desktop selection 분석에서는 `get_context`가 반환한 `contextBinding`,
+dataset/selection revision과 전체 selection 범위를 먼저 기록한다. `ReluEmbeddedBridgeHost`는 dispatch
+직전과 handler 완료 뒤 live Context projection을 비교한다. 선택이 바뀌면 raw detail을
+반사하지 않고 `CONTEXT_CHANGED`와 고정 문구
+`Selection context changed; retry from get_context.`를 반환한다. 중앙 browser Connector의
+동일 오류 문구는 `Connector selection context changed; call get_context and retry`다. Read-only
 분석에서 이 문구가 보이면 이전 구간 결과와 새 구간 결과를 합치지 말고 `get_context`부터
 다시 시작한다. Mutation이면 결과가 ambiguous할 수 있으므로 자동 retry하지 않고
-operation ledger 판정 절차를 따른다.
-명시 guard가 없는 기존 browser service는 더 엄격한 전체 Context version 검사를 계속
-사용한다.
+별도 operation 설계를 따른다. 중앙 browser service는 server snapshot과 Context guard를
+dispatch 직전 재검사한다.
 
-승인·변경 원장의 connector peer는 browser의 server-observed exact Origin 또는 allowlist의
-desktop app ID에서 도출한 `relu-desktop://<sha256>` opaque trust-domain key다. 별도
-page/application-instance binding이 실제 탭이나 desktop instance를 묶는다.
+중앙 승인·변경 원장의 connector peer는 browser의 server-observed exact Origin이며 별도
+page binding이 실제 탭을 묶는다.
 변경 operation은 policyEpoch+service+connector peer+resource+capability+operationId 원장에서 deduplicate된다. Timeout/실패처럼 결과가 모호하면 같은 resource의 후속 변경도 차단한다. `/admin/`의 변경 작업 원장에서 실제 상태를 확인하고 `once/deny` 전용 local approval을 거쳐야 해제할 수 있으며, `trusted_always`, reconnect나 새 탭으로 우회할 수 없다.
 
 ### Operation ledger 유지보수
@@ -125,9 +158,9 @@ node /absolute/path/to/relu-ai-bridge/bin/relu-ai-bridge.mjs archive-ledger
 불일치를 거부한다. 성공 시 terminal metadata를 private archive로 옮기고 새 epoch의 빈 원장을
 만든다. Raw parameter/result는 archive하지 않는다. Operation ID 중복 방어를 우회하므로
 `connector-operations.json` 수동 삭제, epoch 감소, archive 없는 비어 있지 않은 원장
-교체는 금지한다. 정확한 운영 순서는 [배포 가이드](DEPLOYMENT.md#connector-policyepoch과-operation-ledger-보관)를 따른다.
+교체는 금지한다. 정확한 운영 순서는 [배포 가이드](DEPLOYMENT.md#중앙-connector-policyepoch과-operation-ledger)를 따른다.
 
-## Perfetto Connector #1 전용 도구
+## 중앙 Perfetto Connector #1 전용 도구
 
 이 도구 계약은 공식 Perfetto `v58.2`와 RELU `v58` adapter만 지원한다. 다른 Perfetto
 기준선이나 이전 adapter alias는 자동 선택하거나 fallback하지 않는다.
@@ -216,7 +249,7 @@ Bigint cell:
 
 `LOW_CONFIDENCE`, `AMBIGUOUS_COARSE_MATCH`, `CONSTANT_CHANNELS`, `DTW_BAND_CONTACT`는 사람이 검토한다.
 
-## Optional local coding/agent 도구
+## 중앙 bridge의 Optional local coding/agent 도구
 
 | Tool | 용도 | 정책 scope |
 | --- | --- | --- |
@@ -248,7 +281,7 @@ Multi-file edit는 bridge 내부 요청끼리 직렬화하고 각 파일을 comm
 `maxConcurrentCommandsPerRoot`와 `commandSessionTtlMs`가 process/session 고갈을
 제한한다.
 
-## 승인 오류
+## 중앙 bridge 승인 오류
 
 아래 응답은 `manual`의 미승인 호출 또는 `trusted_always`에서도 자동화하지 않는
 `once/deny` 전용 안전 확인에서 반환된다.

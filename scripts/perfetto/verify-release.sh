@@ -126,7 +126,6 @@ exact_keys(
     release,
     [
         "tag", "tag_object", "commit", "created_utc", "annotated_tag",
-        "signed_tag_verified",
     ],
     "release",
 )
@@ -141,8 +140,6 @@ if not re.fullmatch(r"[0-9a-f]{40}", commit):
     raise SystemExit("release commit이 정확한 SHA-1이 아님")
 if release.get("annotated_tag") is not True:
     raise SystemExit("annotated tag 선언 누락")
-if not isinstance(release.get("signed_tag_verified"), bool):
-    raise SystemExit("signed tag 검증 상태 형식 오류")
 if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", release["created_utc"]):
     raise SystemExit("release 생성 시각 형식 오류")
 
@@ -209,7 +206,9 @@ exact_keys(
     ],
     "public baseline",
 )
-exact_keys(data["source_trees"], ["connectors"], "source trees")
+exact_keys(data["source_trees"], ["core", "desktop", "connectors"], "source trees")
+exact_keys(data["source_trees"]["core"], ["bin", "src", "web"], "core source trees")
+exact_keys(data["source_trees"]["desktop"], ["embedded_sdk"], "desktop source trees")
 exact_keys(data["source_trees"]["connectors"], ["perfetto"], "source connector trees")
 exact_keys(
     data["source_trees"]["connectors"]["perfetto"],
@@ -241,8 +240,12 @@ sha_fields = [
     connector.get("contract_blob", ""),
     connector["public_baseline"].get("tag_object_sha", ""),
     connector["public_baseline"].get("commit_sha", ""),
+    data["source_trees"]["core"].get("bin", ""),
+    data["source_trees"]["core"].get("src", ""),
+    data["source_trees"]["core"].get("web", ""),
     data["source_trees"]["connectors"]["perfetto"].get("plugin", ""),
     data["source_trees"]["connectors"]["perfetto"].get("adapter", ""),
+    data["source_trees"]["desktop"].get("embedded_sdk", ""),
 ]
 if any(not re.fullmatch(r"[0-9a-f]{40}", item) for item in sha_fields):
     raise SystemExit("compatibility/source tree SHA 형식 오류")
@@ -295,8 +298,12 @@ print(connector["manifest_path"])
 print(connector["contract_blob"])
 print(connector["public_baseline"]["tag_object_sha"])
 print(connector["public_baseline"]["commit_sha"])
+print(data["source_trees"]["core"]["bin"])
+print(data["source_trees"]["core"]["src"])
+print(data["source_trees"]["core"]["web"])
 print(data["source_trees"]["connectors"]["perfetto"]["plugin"])
 print(data["source_trees"]["connectors"]["perfetto"]["adapter"])
+print(data["source_trees"]["desktop"]["embedded_sdk"])
 PY
 ) || die "릴리스 구조 또는 release-manifest.json 검증 실패"
 
@@ -313,8 +320,12 @@ connector_contract_path=$(printf '%s\n' "$manifest_values" | sed -n '10p')
 manifest_connector_blob=$(printf '%s\n' "$manifest_values" | sed -n '11p')
 manifest_perfetto_tag_object=$(printf '%s\n' "$manifest_values" | sed -n '12p')
 manifest_perfetto_commit=$(printf '%s\n' "$manifest_values" | sed -n '13p')
-manifest_plugin_tree=$(printf '%s\n' "$manifest_values" | sed -n '14p')
-manifest_adapter_tree=$(printf '%s\n' "$manifest_values" | sed -n '15p')
+manifest_core_bin_tree=$(printf '%s\n' "$manifest_values" | sed -n '14p')
+manifest_core_src_tree=$(printf '%s\n' "$manifest_values" | sed -n '15p')
+manifest_core_web_tree=$(printf '%s\n' "$manifest_values" | sed -n '16p')
+manifest_plugin_tree=$(printf '%s\n' "$manifest_values" | sed -n '17p')
+manifest_adapter_tree=$(printf '%s\n' "$manifest_values" | sed -n '18p')
+manifest_embedded_sdk_tree=$(printf '%s\n' "$manifest_values" | sed -n '19p')
 
 [ "$release_tag" = "$(relu_value release.tag_prefix)$(relu_value product.core_version)" ] || \
   die "현재 RELU core contract와 release tag가 다릅니다"
@@ -385,8 +396,10 @@ import hashlib
 import json
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
+import unicodedata
 import xml.etree.ElementTree as ET
 
 repository = pathlib.Path(sys.argv[1])
@@ -515,7 +528,11 @@ def strip_csharp_comments(source, label):
         character = source[index]
         following = source[index + 1] if index + 1 < len(source) else ""
         if state == "code":
-            if character in ("'", '"'):
+            if character == "@" and following == '"':
+                state = "verbatim"
+                result.extend((character, following))
+                index += 2
+            elif character in ("'", '"'):
                 state = character
                 result.append(character)
                 index += 1
@@ -530,6 +547,14 @@ def strip_csharp_comments(source, label):
             else:
                 result.append(character)
                 index += 1
+        elif state == "verbatim":
+            result.append(character)
+            index += 1
+            if character == '"' and following == '"':
+                result.append(following)
+                index += 1
+            elif character == '"':
+                state = "code"
         elif state in ("'", '"'):
             result.append(character)
             index += 1
@@ -551,7 +576,7 @@ def strip_csharp_comments(source, label):
             else:
                 result.append("\n" if character == "\n" else " ")
                 index += 1
-    if state in ("block-comment", "'", '"'):
+    if state in ("block-comment", "verbatim", "'", '"'):
         fail(f"unterminated C# token: {label}")
     return "".join(result)
 
@@ -564,7 +589,11 @@ def require_unique_regex(source, pattern, label, flags=0):
 root_package = tagged_json("package.json")
 sdk_package = tagged_json("sdk/package.json")
 dotnet_project_source = tagged_text("sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj")
-dotnet_options_source = tagged_text("sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluDesktopConnectorOptions.cs")
+dotnet_embedded_source = tagged_text("sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluEmbeddedServiceDefinition.cs")
+dotnet_host_source = tagged_text("sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluEmbeddedBridgeHost.cs")
+dotnet_stdio_source = tagged_text("sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluMcpStdioEntryPoint.cs")
+dotnet_registrar_source = tagged_text("sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluAiClientRegistrar.cs")
+dotnet_peer_source = tagged_text("sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Internal/EmbeddedPipePeerVerifier.cs")
 skills_manifest = tagged_json("skills/manifest.json")
 extension = tagged_json("extension/manifest.json")
 web_connector_source = tagged_text("sdk/relu-web-connector.js")
@@ -575,20 +604,54 @@ plugin_code = strip_javascript_comments(plugin_source, "Perfetto plugin")
 mcp_code = strip_javascript_comments(mcp_source, "MCP server")
 server_code = strip_javascript_comments(server_source, "health server")
 web_connector_code = strip_javascript_comments(web_connector_source, "web connector SDK")
-if '@"' in dotnet_options_source or '@$"' in dotnet_options_source or '"""' in dotnet_options_source:
-    fail(".NET connector unsupported string form")
-if re.search(r"^[ \t]*#", dotnet_options_source, re.MULTILINE) is not None:
-    fail(".NET connector preprocessor directive")
-dotnet_options_code = strip_csharp_comments(dotnet_options_source, ".NET connector options")
+if '@"' in dotnet_embedded_source or '@$"' in dotnet_embedded_source or '"""' in dotnet_embedded_source:
+    fail(".NET embedded service unsupported string form")
+if re.search(r"^[ \t]*#", dotnet_embedded_source, re.MULTILINE) is not None:
+    fail(".NET embedded service preprocessor directive")
+dotnet_embedded_code = strip_csharp_comments(dotnet_embedded_source, ".NET embedded service definition")
+dotnet_host_code = strip_csharp_comments(dotnet_host_source, ".NET embedded bridge host")
+dotnet_stdio_code = strip_csharp_comments(dotnet_stdio_source, ".NET embedded MCP stdio entry point")
+dotnet_registrar_code = strip_csharp_comments(dotnet_registrar_source, ".NET AI client registrar")
+dotnet_peer_code = strip_csharp_comments(dotnet_peer_source, ".NET named-pipe peer verifier")
+
+embedded_root = "sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/"
+expected_embedded_paths = {
+    embedded_root + path for path in (
+        "Internal/BoundedHandlerSlots.cs",
+        "Internal/BoundedJson.cs",
+        "Internal/EmbeddedContextProtocol.cs",
+        "Internal/EmbeddedJsonSchema.cs",
+        "Internal/EmbeddedPipePeerVerifier.cs",
+        "Internal/EmbeddedPipeProtocol.cs",
+        "Properties/AssemblyInfo.cs",
+        "Relu.AI.Bridge.DesktopConnector.csproj",
+        "ReluAiClientRegistrar.cs",
+        "ReluDesktopCapability.cs",
+        "ReluDesktopContext.cs",
+        "ReluEmbeddedBridgeHost.cs",
+        "ReluEmbeddedServiceDefinition.cs",
+        "ReluMcpStdioEntryPoint.cs",
+    )
+}
+actual_embedded_paths = set(
+    git("ls-tree", "-r", "--name-only", tag_ref, "--", embedded_root.rstrip("/"))
+    .decode("utf-8").splitlines()
+)
+if actual_embedded_paths != expected_embedded_paths:
+    fail(".NET embedded runtime source inventory")
 
 if not isinstance(root_package, dict) or root_package.get("name") != "relu-ai-bridge":
     fail("root package name")
 if root_package.get("version") != core_version:
     fail("root package version")
+if root_package.get("private") is not True or root_package.get("type") != "module":
+    fail("root package private/module contract")
 if not isinstance(sdk_package, dict) or sdk_package.get("name") != "@company/relu-ai-connector":
     fail("SDK package name")
 if sdk_package.get("version") != core_version:
     fail("SDK package version")
+if sdk_package.get("private") is not True or sdk_package.get("type") != "module":
+    fail("SDK package private/module contract")
 try:
     dotnet_project = ET.fromstring(dotnet_project_source)
 except ET.ParseError:
@@ -630,7 +693,117 @@ try:
     tagged_paths = git("ls-tree", "-r", "--name-only", "-z", tag_ref).decode("utf-8").split("\0")
 except UnicodeDecodeError:
     fail("tagged path encoding")
-tagged_path_set = {path.casefold() for path in tagged_paths if path}
+tagged_paths = [path for path in tagged_paths if path]
+tagged_path_set = {path.casefold() for path in tagged_paths}
+normalized_paths = {}
+for tagged_path in tagged_paths:
+    normalized = unicodedata.normalize("NFC", tagged_path).casefold()
+    if normalized in normalized_paths and normalized_paths[normalized] != tagged_path:
+        fail(f"case/Unicode path collision: {normalized_paths[normalized]} / {tagged_path}")
+    normalized_paths[normalized] = tagged_path
+
+forbidden_legacy_paths = {
+    "compat/desktop-auth-v1.json",
+    "config/android-log-viewer.desktop.service.example.json",
+    "examples/wpf-android-log-viewer/istableinstanceidprovider.cs",
+    "sdk-dotnet/src/relu.ai.bridge.desktopconnector/internal/desktopwireprotocol.cs",
+    "sdk-dotnet/src/relu.ai.bridge.desktopconnector/reluconnectorsecret.cs",
+    "sdk-dotnet/src/relu.ai.bridge.desktopconnector/reludesktopconnector.cs",
+    "sdk-dotnet/src/relu.ai.bridge.desktopconnector/reludesktopconnectoroptions.cs",
+}
+present_legacy = sorted(forbidden_legacy_paths.intersection(normalized_paths))
+if present_legacy:
+    fail(f"forbidden legacy desktop path: {present_legacy[0]}")
+
+expected_core_runtime_paths = {
+    "bin/relu-ai-bridge.mjs",
+    "src/agents.mjs",
+    "src/approvals.mjs",
+    "src/audit.mjs",
+    "src/bridge.mjs",
+    "src/config.mjs",
+    "src/connectors.mjs",
+    "src/goal.mjs",
+    "src/http-proof.mjs",
+    "src/instance-lock.mjs",
+    "src/json-schema.mjs",
+    "src/ledger-maintenance.mjs",
+    "src/mcp.mjs",
+    "src/operation-ledger.mjs",
+    "src/perfetto-broker.mjs",
+    "src/perfetto-store.mjs",
+    "src/perfetto-tools.mjs",
+    "src/relu-tools.mjs",
+    "src/security.mjs",
+    "src/server.mjs",
+    "src/sessions.mjs",
+    "src/tools/commands.mjs",
+    "src/tools/files.mjs",
+    "src/utils.mjs",
+    "src/websocket.mjs",
+    "web/admin.css",
+    "web/admin.html",
+    "web/admin.js",
+}
+actual_core_runtime_paths = {
+    path for path in tagged_paths
+    if path == "bin" or path.startswith("bin/")
+    or path == "src" or path.startswith("src/")
+    or path == "web" or path.startswith("web/")
+}
+if actual_core_runtime_paths != expected_core_runtime_paths:
+    fail("core runtime source inventory")
+
+
+def require_package_blob(reference, label, executable=False):
+    if not isinstance(reference, str) or not reference.startswith("./") or "\\" in reference:
+        fail(f"{label} relative path")
+    pure = pathlib.PurePosixPath(reference[2:])
+    if not pure.parts or any(part in ("", ".", "..") for part in pure.parts):
+        fail(f"{label} relative path")
+    path = pure.as_posix()
+    tagged_blob(path)
+    if executable:
+        entry = git("ls-tree", tag_ref, "--", path).decode("utf-8").strip()
+        if not entry.startswith("100755 blob ") or not entry.endswith(f"\t{path}"):
+            fail(f"{label} executable mode")
+
+
+expected_scripts = {
+    "start": "node ./bin/relu-ai-bridge.mjs serve",
+    "init": "node ./bin/relu-ai-bridge.mjs init",
+    "doctor": "node ./bin/relu-ai-bridge.mjs doctor",
+    "archive-ledger": "node ./bin/relu-ai-bridge.mjs archive-ledger",
+    "verify-skills": "node ./scripts/skills/manage-skills.mjs verify-source",
+    "test": "node --test",
+    "check": "node ./scripts/check-syntax.mjs && node ./scripts/skills/manage-skills.mjs verify-source && node --test",
+}
+if root_package.get("bin") != {"relu-ai-bridge": "./bin/relu-ai-bridge.mjs"}:
+    fail("root package bin contract")
+if root_package.get("scripts") != expected_scripts:
+    fail("root package scripts contract")
+for reference in root_package["bin"].values():
+    require_package_blob(reference, "root package bin", executable=True)
+for script_name, command in root_package["scripts"].items():
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        fail(f"root package script parse: {script_name}")
+    for token in tokens:
+        if token.startswith("./"):
+            require_package_blob(token, f"root package script {script_name}")
+
+expected_sdk_exports = {
+    ".": {
+        "types": "./relu-web-connector.d.ts",
+        "default": "./relu-web-connector.js",
+    }
+}
+if sdk_package.get("exports") != expected_sdk_exports:
+    fail("SDK package exports contract")
+for reference in expected_sdk_exports["."].values():
+    require_package_blob(f"./sdk/{reference[2:]}", "SDK package export")
+
 override_paths = {
     name
     for directory in ("", "sdk-dotnet/", "sdk-dotnet/src/", "sdk-dotnet/src/relu.ai.bridge.desktopconnector/")
@@ -652,10 +825,104 @@ require_unique_regex(
     "web connector version assignment count",
 )
 require_unique_regex(
-    dotnet_options_code,
-    r"\b(?:public[ \t]+)?string[ \t]+ConnectorVersion[ \t]*\{",
-    ".NET connector version declaration count",
+    dotnet_embedded_code,
+    r'^[ \t]*string[ \t]+version[ \t]*=',
+    ".NET embedded service version declaration count",
+    re.MULTILINE,
 )
+require_unique_regex(
+    dotnet_stdio_code,
+    r'^[ \t]*public const string StdioArgument = "--relu-mcp-stdio";[ \t]*$',
+    ".NET embedded MCP stdio argument",
+    re.MULTILINE,
+)
+require_unique_regex(
+    dotnet_stdio_code,
+    r'^[ \t]*private const string ProtocolVersion = "2025-06-18";[ \t]*$',
+    ".NET embedded MCP protocol version",
+    re.MULTILINE,
+)
+if '"2026-07-28"' in dotnet_stdio_code or '"server/discover"' in dotnet_stdio_code:
+    fail(".NET embedded MCP obsolete discovery contract")
+require_unique_regex(
+    dotnet_stdio_code,
+    r'if \(method == "initialize"\)',
+    ".NET embedded MCP initialize lifecycle",
+)
+require_unique_regex(
+    dotnet_stdio_code,
+    r'if \(method == "notifications/initialized"\)',
+    ".NET embedded MCP initialized notification",
+)
+require_unique_regex(
+    dotnet_stdio_code,
+    r'"tools/list" => Result\(id, ToolsListResult\(\)\)',
+    ".NET embedded MCP tools/list route",
+)
+require_unique_regex(
+    dotnet_stdio_code,
+    r'"tools/call" => await HandleToolCallAsync\(',
+    ".NET embedded MCP tools/call route",
+)
+require_unique_regex(
+    dotnet_host_code,
+    r"PipeOptions\.Asynchronous[ \t]*\|[ \t]*PipeOptions\.CurrentUserOnly",
+    ".NET embedded same-user pipe",
+)
+require_unique_regex(
+    dotnet_embedded_code,
+    r'"relu-ai-bridge-pipe-v1\\0\{userIdentity\}\\0\{serviceId\}"',
+    ".NET embedded per-user pipe namespace",
+)
+require_unique_regex(
+    dotnet_embedded_code,
+    r"WindowsIdentity\.GetCurrent\(\)",
+    ".NET embedded Windows user SID binding",
+)
+require_unique_regex(
+    dotnet_host_code,
+    r"EmbeddedPipePeerVerifier\.VerifyClient\(pipe\);",
+    ".NET embedded pipe client verification",
+)
+require_unique_regex(
+    dotnet_host_code,
+    r'OptionalString\(arguments, "operationId", 128, minimumLength: 8\)',
+    ".NET embedded operationId bounds",
+)
+require_unique_regex(
+    dotnet_peer_code,
+    r"private static extern bool GetNamedPipeServerProcessId\(",
+    ".NET embedded pipe server verification",
+)
+require_unique_regex(
+    dotnet_registrar_code,
+    r'\["mcp", "add", options\.ServerName, "--", executablePath, ReluMcpStdioEntryPoint\.StdioArgument\]',
+    ".NET Codex user registration command",
+)
+require_unique_regex(
+    dotnet_registrar_code,
+    r'\["mcp", "add", "--scope", "user", options\.ServerName, "--", executablePath, ReluMcpStdioEntryPoint\.StdioArgument\]',
+    ".NET Claude user registration command",
+)
+require_unique_regex(
+    dotnet_registrar_code,
+    r'"relu-ai-bridge-registrar-mutex-v1\\0\{userIdentity\}\\0\{serverName\}"',
+    ".NET per-user registrar mutex namespace",
+)
+require_unique_regex(
+    dotnet_registrar_code,
+    r'return \$"Global\\\\Relu\.AI\.Bridge\.EndViewer\.McpRegistration\.\{Convert\.ToHexString\(digest\.AsSpan\(0, 12\)\)\}";',
+    ".NET cross-session registrar mutex scope",
+)
+if 'return $"Local\\\\Relu.AI.Bridge.EndViewer.McpRegistration.' in dotnet_registrar_code:
+    fail(".NET obsolete session-local registrar mutex")
+require_unique_regex(
+    dotnet_registrar_code,
+    r'Path\.Combine\(localAppData, "Programs", "OpenAI", "Codex", "bin", "codex\.exe"\)',
+    ".NET official Codex install candidate",
+)
+if re.search(r"public[ \t]+string[ \t]+ExecutablePath\b", dotnet_registrar_code):
+    fail(".NET registrar public executable path override")
 require_unique_regex(
     web_connector_code,
     rf"^[ \t]*this\.connectorVersion = String\(options\.connectorVersion \?\? '{version_pattern}'\);[ \t]*$",
@@ -663,9 +930,9 @@ require_unique_regex(
     re.MULTILINE,
 )
 require_unique_regex(
-    dotnet_options_code,
-    rf'^[ \t]*public string ConnectorVersion \{{ get; init; \}} = "{version_pattern}";[ \t]*$',
-    ".NET connector default version",
+    dotnet_embedded_code,
+    rf'^[ \t]*string version = "{version_pattern}",[ \t]*$',
+    ".NET embedded service default version",
     re.MULTILINE,
 )
 
@@ -796,10 +1063,15 @@ cmp -s "$verify_root/dependency-manifest.actual" "$release_dir/dependency-manife
 
 actual_core_blob=$(git -C "$verify_repo" rev-parse "$release_tag:$core_contract_path")
 actual_connector_blob=$(git -C "$verify_repo" rev-parse "$release_tag:$connector_contract_path")
+actual_core_bin_tree=$(git -C "$verify_repo" rev-parse "$release_tag:bin")
+actual_core_src_tree=$(git -C "$verify_repo" rev-parse "$release_tag:src")
+actual_core_web_tree=$(git -C "$verify_repo" rev-parse "$release_tag:web")
 actual_plugin_tree=$(git -C "$verify_repo" rev-parse \
   "$release_tag:$(compat_value integration.source_plugin_path)")
 actual_adapter_tree=$(git -C "$verify_repo" rev-parse \
   "$release_tag:$(compat_value integration.source_adapter_path)")
+actual_embedded_sdk_tree=$(git -C "$verify_repo" rev-parse \
+  "$release_tag:sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector")
 verified_package_identity=$(git -C "$verify_repo" show "$release_tag:package.json" | \
   python3 -c 'import json,sys; value=json.load(sys.stdin); print(value.get("name", "")); print(value.get("version", ""))')
 [ "$(printf '%s\n' "$verified_package_identity" | sed -n '1p')" = relu-ai-bridge ] || \
@@ -809,8 +1081,13 @@ verified_package_identity=$(git -C "$verify_repo" show "$release_tag:package.jso
 [ "$actual_core_blob" = "$manifest_core_blob" ] || die "manifest core contract blob 불일치"
 [ "$actual_connector_blob" = "$manifest_connector_blob" ] || \
   die "manifest connector contract blob 불일치"
+[ "$actual_core_bin_tree" = "$manifest_core_bin_tree" ] || die "manifest core bin tree 불일치"
+[ "$actual_core_src_tree" = "$manifest_core_src_tree" ] || die "manifest core src tree 불일치"
+[ "$actual_core_web_tree" = "$manifest_core_web_tree" ] || die "manifest core web tree 불일치"
 [ "$actual_plugin_tree" = "$manifest_plugin_tree" ] || die "manifest plugin tree 불일치"
 [ "$actual_adapter_tree" = "$manifest_adapter_tree" ] || die "manifest adapter tree 불일치"
+[ "$actual_embedded_sdk_tree" = "$manifest_embedded_sdk_tree" ] || \
+  die "manifest embedded SDK tree 불일치"
 [ "$actual_core_blob" = "$(git hash-object "$RELU_COMPAT_FILE")" ] || \
   die "bundle core contract가 현재 검증 도구 contract와 다릅니다"
 [ "$actual_connector_blob" = "$(git hash-object "$PERFETTO_COMPAT_FILE")" ] || \

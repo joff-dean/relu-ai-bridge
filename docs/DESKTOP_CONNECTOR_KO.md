@@ -1,269 +1,270 @@
-# Windows Desktop Connector 및 WPF 통합 설계
+# Windows Desktop Embedded Bridge 및 WPF 통합 설계
 
-RELU AI Bridge 0.6.0은 사람이 실행해 둔 Windows 분석 프로그램을 Claude/Codex의
-로컬 MCP 작업 공간에 연결한다. 화면을 캡처하거나 UI Automation으로 조작하는 방식이
-아니라, 기존 프로그램의 분석 계층이 현재 선택 구간과 제한된 조회 함수를 직접
-제공하는 구조다.
+RELU AI Bridge 0.7.0의 Windows desktop 기본 경로는 별도 RELU 프로그램을 설치하는
+방식이 아니다. 회사가 배포하는 `EndViewer.exe`에 .NET bridge를 포함하고, 사용자가
+EndViewer를 실행하면 Claude Code와 Codex 연결 준비까지 앱이 자동으로 끝낸다.
 
-이 저장소의 기준 구현은 Android 로그를 차트로 표시하는 WPF 프로그램이다.
+최종 사용자는 다음 항목을 만들거나 입력하지 않는다.
 
-```text
-WPF chart / existing analysis engine
-  ├─ selection-completed event
-  ├─ bounded statistics / series / excerpts
-  └─ extracted sections / anomaly candidates
-                 │ .NET 8 Desktop Connector SDK
-                 ▼
-      ws://127.0.0.1:5746/relu/desktop/ws
-                 │ mutual HMAC + live Context
-                 ▼
-            RELU AI Bridge
-  ├─ server-owned schema/effect policy
-  ├─ trusted_always 기본 / manual 선택 policy
-  ├─ stale-selection execution guard
-  └─ list_sessions / get_context /
-     list_capabilities / execute
-                 │
-                 ▼
-       Claude / Codex + analysis Skill
-```
+- RELU AI Bridge 또는 Node.js 별도 설치
+- daemon/service 실행과 localhost port 설정
+- desktop connector token 또는 secret
+- `config/local.json`, desktop service JSON, 프로젝트 `.mcp.json`
+- EndViewer 외의 MCP host 실행 파일
 
-## Perfetto 연결과 무엇이 같은가
+NuGet/project reference는 EndViewer 개발자가 빌드할 때 사용하는 구성 요소다. 최종
+배포물에는 필요한 코드와 runtime을 포함하며 사용자에게 별도 설치 단계가 노출되지
+않아야 한다.
 
-분석 관점에서는 같은 패턴이다. Perfetto plugin이 선택 area와 Trace Processor의
-제한된 함수를 제공하듯, WPF Connector가 선택 구간과 기존 분석 엔진의 제한된 함수를
-제공한다. Claude/Codex는 두 경우 모두 live session을 찾고, 현재 Context와
-Capability를 조회한 뒤 선택 구간을 분석한다.
+> 이 저장소가 제공하는 것은 SDK와 WPF 통합 골격이다. 회사의 proprietary EndViewer
+> application source, 실제 분석 엔진, installer, 서명 인증서와 완성된 `EndViewer.exe`는
+> 포함하지 않는다. 아래의 “실행만 하면 된다”는 EndViewer 팀이 이 골격을 실제 앱에
+> 통합하고 Windows에서 빌드·서명·검증한 배포물에 대한 사용자 계약이다.
 
-차이는 adapter 위치다.
-
-| 구분 | Perfetto | WPF Android Log Viewer |
-| --- | --- | --- |
-| 실행 위치 | browser tab의 Perfetto plugin | Windows process의 .NET SDK |
-| 데이터 엔진 | Trace Processor | 기존 WPF 분석 계층 |
-| WebSocket | `/perfetto/ws` 및 generic Perfetto session | `/relu/desktop/ws` |
-| browser 구분 | exact `Origin` 필수 | `Origin`이 있으면 거부 |
-| stale target | trace/connection/area snapshot | dataset/selection revision guard |
-
-선택 이벤트 자체가 Claude/Codex를 새로 실행하거나 모델 호출을 강제로 시작하지는
-않는다. 사용자가 이미 실행 중인 AI client에서 “현재 선택 구간 분석”을 요청하면
-최신 Context를 읽는다. 이는 Perfetto의 현재 사용 흐름과 같다. 무인 자동 분석 loop가
-필요하면 별도의 회사 승인, 비용·중단 조건 및 결과 전달 정책을 가진 orchestration
-기능으로 설계해야 하며 Desktop Connector 권한에 암묵적으로 포함하지 않는다.
-
-## 저장소 구성
+## 단일 실행 파일의 이중 모드
 
 ```text
-sdk-dotnet/
-  src/Relu.AI.Bridge.DesktopConnector/   공용 net8.0 SDK
-  tests/                                  wire/auth/guard self-test
+사용자의 일반 실행
+EndViewer.exe
+  ├─ WPF UI + 기존 Android 로그 분석 엔진
+  ├─ ReluEmbeddedBridgeHost
+  │    ├─ 현재 dataset/selection Context
+  │    ├─ 서명된 배포물에 고정된 Capability/schema/effect
+  │    └─ CurrentUserOnly named pipe server
+  └─ ReluAiClientRegistrar
+       └─ Claude Code/Codex user-scope MCP 자동 등록
 
-examples/wpf-android-log-viewer/
-  WpfAndroidLogViewer.Integration.csproj  net8.0-windows 통합 예제
-  ReluWpfIntegration.cs                   composition root
-  AndroidLogViewerViewModel.cs            chart event 연결 예
-  IAndroidLogAnalysisEngine.cs            기존 분석 계층 경계
-  AndroidLogCapabilities.cs               정적 Capability handler
-  SelectionContextStore.cs                thread-safe live Context
-
-config/android-log-viewer.desktop.service.example.json
-                                         server registry 예제
-skills/relu-analyze-selection/            Claude/Codex 공통 분석 절차
+AI client가 MCP server를 시작할 때
+Claude/Codex ──stdio──▶ EndViewer.exe <내부 stdio mode>
+                           └─ ReluMcpStdioEntryPoint
+                                │ CurrentUserOnly named pipe
+                                ▼
+                         실행 중 EndViewer GUI process
 ```
 
-SDK는 외부 NuGet package를 runtime에 내려받거나 임의 assembly를 load하지 않는다.
-검증된 RELU release의 `sdk-dotnet/`을 사내 NuGet registry에 재패키징하거나 application
-solution에서 source/project reference로 고정한다.
+같은 `EndViewer.exe`가 두 역할을 한다.
 
-## 통합 순서
+- 일반 모드에서는 WPF UI와 `ReluEmbeddedBridgeHost`를 시작한다.
+- 내부 stdio 모드에서는 UI를 열지 않고 `ReluMcpStdioEntryPoint`가 MCP stdio와
+  EndViewer의 named pipe를 중계한다.
+- `ReluAiClientRegistrar`는 AI client에 같은 실행 파일의 내부 stdio 모드를 등록한다.
 
-### 1. 서버 registry 등록
+GUI host는 Windows 사용자별로 한 process만 실행해야 한다. Pipe 이름은 Windows 사용자
+SID와 EndViewer service ID를 domain-separated SHA-256으로 해시해 사용자별로 고정하고,
+원문 SID는 노출하지 않는다. 첫 pipe instance를 독점하므로 두 번째 GUI instance는 bridge 시작에
+성공할 수 없다. 실제 제품은 application single-instance 정책으로 두 번째 실행을 기존
+창으로 전달하거나, bridge 충돌을 bounded 상태로 표시하고 로그 viewer 자체는 계속
+사용할 수 있게 처리한다.
 
-[`config/android-log-viewer.desktop.service.example.json`](../config/android-log-viewer.desktop.service.example.json)의
-service 객체를 주 설정 `connectors.services`에 넣는다. 예제의 핵심 계약은 다음과 같다.
+내부 mode switch의 정확한 인자와 API 호출 순서는
+[`ReluWpfIntegration.cs`](../examples/wpf-android-log-viewer/ReluWpfIntegration.cs)를
+정본으로 사용한다. 공개 문서의 임의 코드 조각보다 현재 release 예제가 우선한다.
 
-```json
-{
-  "id": "android-log-viewer",
-  "tokenEnv": "RELU_ANDROID_LOG_VIEWER_TOKEN",
-  "clientKinds": ["desktop"],
-  "origins": [],
-  "desktopAppIds": ["com.relu.AndroidLogViewer"],
-  "bindingFields": ["logResourceId", "datasetRevision"],
-  "executionGuardFields": [
-    "logResourceId",
-    "datasetRevision",
-    "selectionId",
-    "selectionRevision",
-    "selection"
-  ]
-}
-```
+## 최초 실행과 자동 등록
 
-`bindingFields`는 approval policy의 resource 경계다. 선택마다 바뀌는 값은 넣지
-않아 같은 dataset 안에서 승인 창을 반복하지 않게 한다. 반면
-`executionGuardFields`에는 selection identity/revision과 전체 `selection` 객체를 포함해
-승인 대기 또는 실행 도중 ID·revision·start/end 중 하나라도 바뀐 요청을 거부한다.
-새 로그를 열거나 dataset revision이 바뀌면
-resource scope도 바뀐다. `manual`이면 다시 승인하고, 새 설치 기본인
-`trusted_always`이면 prompt 없이 새 경계를 검사한 뒤 진행한다.
+EndViewer 일반 모드가 시작되면 registrar는 다음 순서로 동작한다.
 
-Browser와 desktop이 모두 필요한 논리 서비스라도 한 token을 두 runtime에 공유할 수
-없다. Registry는 `clientKinds`에 정확히 한 transport만 허용하므로 별도 service ID와
-`tokenEnv`를 사용한다. 이렇게 해야 한 application의 credential 노출이 다른
-transport로 확대되지 않는다. Desktop service에는 client-side guard가 없는 HTTP
-Capability도 섞을 수 없다. 필요한 고정 API는 별도 browser/HTTP service로 등록한다.
+1. EndViewer가 일반 사용자 권한인지 확인한다. 관리자/elevation 상태거나 판정할 수
+   없으면 자동 등록하지 않는다.
+2. Windows의 임의 `PATH` 명령을 실행하지 않는다. 알려진 설치 위치와 현재 실행 중인
+   client 경로 중 Authenticode 및 공식 OpenAI/Anthropic publisher 검증을 통과한
+   Claude Code/Codex CLI만 후보로 삼는다.
+   Codex 공식 설치 script의 기본 경로인
+   `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe`도 이 검증 대상에 포함한다.
+3. Token/API key/password 등 credential 형태의 환경 변수를 제거한 child environment에서
+   해당 CLI의 공식 MCP 조회 명령으로 기존 user-scope 항목을 확인한다.
+4. 항목이 없으면 EndViewer의 안정된 절대 경로와 내부 stdio mode를 user scope에
+   등록한다.
+5. 항목이 앱이 소유한 동일 경로, stdio transport, 단일 내부 인자, 빈 environment로
+   정확히 일치하면 그대로 사용한다.
+6. 동일한 이름이 다른 executable이나 실행 환경을 가리키면 덮어쓰지 않고 진단을
+   남긴다.
+7. process 내부 gate와 SID로 분리한 `Global\` named mutex 아래에서 같은 Windows
+   계정의 모든 login session을 직렬화한다. add 직전 재조회하고, 등록 뒤 공식 조회
+   명령으로 실제 저장된 전체 실행 계약을 다시 검증한다.
 
-### 2. 전용 secret 주입
+JSON/TOML을 직접 수정하지 않는다. AI client가 자체 user 설정에 등록 정보를 보관하는
+것은 MCP client의 필수 동작이지만, EndViewer가 공식 CLI를 통해 이를 대신하므로 사용자가
+설정 파일을 찾거나 편집할 필요는 없다.
 
-```powershell
-$env:RELU_ANDROID_LOG_VIEWER_TOKEN = '<company-secret-provider-result>'
-```
+Registrar는 시작 전에 존재하거나 재조회에서 발견한 충돌을 덮어쓰지 않는다. 다만
+Codex CLI의 `mcp add`에는 compare-and-set/no-clobber API가 없으므로, 마지막 재조회와
+`add` 사이의 매우 짧은 구간에 같은 Windows 계정의 별도 process가 동일 server 이름을
+새로 쓰는 경우까지 원자적으로 보호할 수는 없다. 같은 계정의 process는 설정 파일도 직접
+수정할 수 있다는 신뢰 경계 안의 잔여 race다. 운영 중 별도 `codex mcp add/remove`
+자동화를 동시에 실행하지 않고, 조직 managed MCP를 쓰는 환경에서는 앱 등록을 비활성화한다.
 
-예시를 설명하기 위한 표현일 뿐, 운영에서는 회사 Secret Agent, Windows Credential
-Manager 또는 승인된 process supervisor가 주입해야 한다. Token을 source, JSON,
-command line, 로그, exception, URL 또는 Windows registry 평문 값으로 두지 않는다.
-MCP/admin control token과도 반드시 다른 값이어야 한다.
+이 등록은 project scope가 아니라 **Windows 사용자 범위**다. 따라서 같은 OS 계정으로
+실행하는 다른 Claude Code/Codex 프로젝트도 `relu-endviewer` 서버를 발견하고, EndViewer가
+열려 있으면 현재 선택 Context와 read-only 분석 도구를 호출할 수 있다. `active` 값은
+정렬 hint일 뿐 호출 권한 경계가 아니다. 공용 계정을 피하고 회사가 승인한 AI 프로젝트와
+데이터 분류에서만 사용하며, 더 강한 프로젝트 격리가 필요한 환경은 조직 managed MCP로
+허용 범위를 제한한다.
 
-### 3. 기존 WPF 분석 계층 연결
+Claude와 Codex 중 하나만 설치되어 있어도 해당 client 연결은 완료한다. CLI를 찾지 못한
+client는 EndViewer 실행을 방해하지 않고 다음 실행에서 다시 확인한다.
 
-[`IAndroidLogAnalysisEngine`](../examples/wpf-android-log-viewer/IAndroidLogAnalysisEngine.cs)을
-기존 통계·차트·텍스트 추출 코드에 구현한다. Connector handler가 View의 control tree를
-탐색하지 않게 하고, 이미 존재하는 domain/application service를 직접 호출한다.
+### 최초 한 번 필요한 reload
 
-[`ReluWpfIntegration`](../examples/wpf-android-log-viewer/ReluWpfIntegration.cs)을 application
-수명 동안 하나 유지한다. 차트의 selection-completed 이벤트에서
-`UpdateSelectionAsync`를 호출하고, 창 활성화 변경은 `WindowActivationChangedAsync`로
-전달한다. `active`는 목록 정렬용 hint이며 mutation 대상을 자동 결정하는 권한 근거가
-아니다.
+최초 자동 등록 **전에 이미 실행 중이던** Claude/Codex는 시작할 때 읽은 MCP server
+목록을 캐시할 수 있다. 프로토콜상 EndViewer가 다른 process의 이미 열린 MCP 목록을
+강제로 바꿀 수 없으므로 등록 직후에는 다음 중 하나가 한 번 필요하다.
 
-`InstanceId`는 설치별로 안정적이고 opaque해야 한다. 사용자명, 장치 serial, 경로,
-token을 포함하지 말고 현재 사용자만 읽을 수 있는 app-data ACL 아래에서 관리한다.
-Connector resume secret은 process 메모리에만 유지한다. 앱이 정상적으로 재시작되면
-Bridge는 같은 authenticated app/instance의 살아 있는 session이 없을 때에만 이를
-회전한다.
+- Claude/Codex 재시작
+- client가 제공하는 MCP reload/reconnect
 
-### 4. 시작과 확인
+등록이 끝난 다음부터는 같은 절차를 반복할 필요가 없다. EndViewer 업데이트 후에도
+등록이 깨지지 않도록 회사 배포는 버전별 임시 파일이 아닌 안정된 서명 launcher 경로를
+유지해야 한다.
 
-사람이 Bridge, WPF 프로그램, Claude/Codex를 실행한다.
+### 회사 managed MCP
 
-```powershell
-node .\bin\relu-ai-bridge.mjs doctor
-node .\bin\relu-ai-bridge.mjs serve
-dotnet build .\sdk-dotnet\Relu.AI.Bridge.DesktopConnector.sln -c Release
-dotnet run --project .\sdk-dotnet\tests\Relu.AI.Bridge.DesktopConnector.Tests\Relu.AI.Bridge.DesktopConnector.Tests.csproj -c Release
-```
+Claude Code가 exclusive `managed-mcp.json` 정책으로 운영되거나 Codex 조직 정책이
+사용자 범위 MCP 추가를 막으면 앱이 이를 우회하지 않는다. 이 환경에서는 IT가 EndViewer
+배포 전에 다음 값을 조직 정책에 등록해야 한다.
 
-WPF에서 로그와 구간을 선택한 뒤 MCP 순서는 다음과 같다.
+- 회사가 관리하는 안정된 `EndViewer.exe` 절대 경로
+- EndViewer의 내부 stdio mode 인자
+- 별도 environment secret이 없는 local stdio server 계약
 
-1. `list_sessions`에서 `android-log-viewer` desktop session 확인
-2. `get_context`로 dataset과 정확한 selection revision 확인
-3. `list_capabilities`로 현재 서버 registry 계약 확인
-4. 통계와 downsampled series를 먼저 조회
-5. 필요한 경우에만 추출 section, anomaly, 제한된 원문을 조회
-6. 마지막에 `get_context`를 다시 읽어 같은 selection인지 확인
+이것은 사용자별 수동 설정이 아니라 IT 배포 정책이다. Pilot 장비에서 서명, 설치 경로,
+CLI 조회 결과와 client restart 동작을 함께 검증한다.
 
-## Capability 설계 원칙
+## WPF 통합 책임
 
-예제는 read-only 함수만 제공한다.
+EndViewer composition root는 다음 세 API를 연결한다.
 
-| Capability | 목적 | 기본 상한 |
+- `ReluEmbeddedBridgeHost`: GUI process 안에서 현재 Context와 고정 Capability handler를
+  제공하고 user-only named pipe를 소유한다.
+- `ReluMcpStdioEntryPoint`: AI client가 시작한 stdio process에서 MCP frame을 처리하고
+  실행 중 GUI host로 중계한다.
+- `ReluAiClientRegistrar`: Claude Code/Codex의 user-scope 등록을 조회·추가·검증한다.
+
+앱은 기존 domain/application service를 handler에 직접 연결한다. View의 control tree,
+화면 캡처, UI Automation, 임의 reflection 또는 assembly 동적 로딩으로 데이터를 찾지
+않는다.
+
+차트의 selection-completed event에서는 opaque log ID, dataset revision, selection
+ID/revision과 start/end를 atomic Context로 갱신한다. 창 활성화 값은 목록 정렬용 hint일
+뿐 mutation 대상을 자동 결정하는 권한 근거가 아니다.
+
+앱 시작 시 아직 로그를 열거나 구간을 선택하지 않았어도 GUI host와 registrar는 시작한다.
+이 상태에서 session 목록은 유지하되 Context 조회와 분석 실행은 bounded
+`CONTEXT_UNAVAILABLE` 오류와 “먼저 구간을 선택하라”는 메시지를 반환한다. 첫
+selection-completed event가 들어오면 별도 재등록이나 재시작 없이 정상 분석 상태로
+전환한다. 빈 ID, 임의의 `0..1` 범위 또는 이전 파일의 selection을 가짜 초기값으로
+만들지 않는다.
+
+## Capability 설계
+
+Android 로그 viewer의 기본 Capability는 read-only다.
+
+| Capability | 목적 | 권장 상한 |
 | --- | --- | --- |
-| `get_selection_stats` | 선택 구간의 기존 집계 | bounded metric 200개 |
+| `get_selection_stats` | 현재 구간의 집계 | metric 200개 |
 | `get_selection_series` | 분석용 downsampled chart | series 6개, 각 1,000 point |
-| `get_extracted_sections` | 기존 분석기가 뽑은 section | section 100개 |
+| `get_extracted_sections` | 기존 분석기의 section | section 100개 |
 | `find_anomalies` | 기존 알고리즘의 이상 후보 | 후보 100개 |
 | `get_log_excerpt` | 후보 주변 최소 원문 | 최대 200줄 |
 
-전체 로그 파일, 무제한 chart point, 임의 파일 경로, SQL, URL, reflection target,
-script 또는 UI selector를 parameter로 받지 않는다. 결과에는 적용 filter, timebase,
-sampling/parser version, truncation과 dropped-record 정보를 함께 주는 것이 좋다.
-각 row·point·section 상한과 별도로, 직렬화한 Capability 결과 전체가
-`connectors.maxResultBytes` 합산 byte 상한을 통과해야 한다.
+Capability 이름, input/output schema, effect와 제한은 EndViewer의 검토된 source/binary에
+고정한다. 런타임 JSON, 모델 argument 또는 로그 내용이 이를 확장할 수 없다. 전체 로그,
+임의 파일 경로, SQL, URL, command, selector와 reflection target을 parameter로 받지
+않는다. 큰 결과는 aggregate, filter, downsample하고 전체 직렬화 byte 상한도 적용한다.
 
-나중에 `focus_range`나 annotation 같은 UI mutation을 추가한다면 server registry의
-`effect`를 정확히 표시하고 unique `operationId`, timeout 후 ambiguous 판정 및 local
-policy를 적용해야 한다. `trusted_always`도 operation ledger, Context guard와
-`once/deny` 전용 ambiguous 판정 확인을 우회하지 않는다. Read로 위장해 추가하면 안 된다.
+현재 embedded 기본은 read-only이므로 RELU 승인 창 없이 호출한다. 향후 annotation이나
+`focus_range` 같은 mutation을 추가할 때는 `operationId`, deduplication, timeout 뒤
+ambiguous 판정, preview 및 회사 정책을 별도 구현해야 한다. “항상 허용”이라는 편의를
+중복 실행 방어나 stale-selection 검증을 끄는 의미로 해석하면 안 된다.
 
-## 인증과 stale-selection 방어
+## 선택 변경 방어
 
-Desktop endpoint는 다음 순서로 fail-closed한다.
+MCP 호출은 다음 순서를 지킨다.
 
-1. explicit loopback의 정확한 `/relu/desktop/ws`만 허용한다.
-2. browser가 자동으로 보내는 `Origin` header가 하나라도 있으면 upgrade를 거부한다.
-3. app ID, stable instance ID, 양쪽 fresh nonce와 전용 audience를 server/client HMAC에
-   모두 묶는다. Raw token은 wire에 보내지 않는다.
-4. server proof를 검증하기 전에는 Context와 resume secret을 보내지 않는다.
-5. Desktop registration의 정확한 UTF-8 JSON 문자열 digest를 client proof에 묶는다.
-   이는 JavaScript와 .NET의 Unicode·decimal 직렬화 차이를 제거한다.
-6. HMAC 검증 뒤에만 duplicate-key 없는 JSON parse, identity, byte/depth/node limit,
-   Context schema와 advertised Capability 교집합을 확인한다.
+1. AI client가 현재 Context와 selection revision을 읽는다.
+2. embedded host가 Capability input과 결과 크기를 검증한다.
+3. handler 직전에 live dataset/selection projection을 비교한다.
+4. 기존 분석 엔진을 bounded cancellation token과 함께 호출한다.
+5. handler 완료 뒤 같은 projection을 다시 비교한다.
+6. 구간이 바뀌었으면 결과를 반환하지 않고 context-changed 오류로 끝낸다.
 
-각 연결의 수신 message 처리 queue는 최대 32개 frame, 설정된 단일 message 상한의 2배이자
-최대 4 MiB로 제한하며 모든 Connector 연결의 대기 byte 합도 16 MiB로 제한한다. 초과,
-인증 실패, protocol 오류 또는 연결 종료가 발생하면 해당 연결을 즉시 terminal 상태로
-바꾸고 아직 처리하지 않은 frame을 버리며, 고정된 사유의 audit event를 한 번만 남긴다.
-따라서 빠른 sender가 비동기 audit/검증보다 앞서 무제한 메모리나 인증 뒤 작업을 쌓을 수
-없다.
+Read-only 분석 중 context-changed 오류를 받으면 AI는 이전 결과와 새 결과를 합치지 않고
+Context부터 다시 읽는다. Handler는 cancellation을 존중해야 하며, 동작 중인 task를
+버린 채 새 요청을 무제한 생성해서는 안 된다.
 
-인증에 사용한 allowlisted app ID는 Bridge 내부에서
-`relu-desktop://<sha256>` opaque app trust-domain peer로 변환된다. 승인·mutation
-원장에는 원문 app ID가 아니라 이 connector peer가 들어가고, stable instance ID로
-만든 별도의 application-instance binding이 설치별 desktop instance를 묶는다.
+선택 event 자체가 새 Claude/Codex 대화를 만들거나 모델 호출을 강제하지는 않는다.
+사용자가 이미 실행한 AI client에서 “EndViewer의 현재 구간을 분석해줘”라고 요청하면
+최신 Context를 사용한다. 무인 자동 호출은 비용·중단·결과 전달 정책이 필요한 별도
+orchestration 기능이며 embedded bridge의 암묵적 권한이 아니다.
 
-요청 시 Bridge가 보낸 `contextGuard` projection을 SDK가 handler 직전과 직후의 live
-Context에 비교한다. `UpdateSelectionAsync`는 SDK의 atomic update callback 안에서
-context 저장소를 갱신하고, update frame과 success 응답의 마지막 guard 검사를 같은
-send gate로 직렬화한다. 인증 중에 발생해 즉시 전송하지 못한 선택 변경도 `hello_ack`
-직후 최신 Context를 무조건 다시 보내 복구한다. 선택 변경 알림은 진행 중 handler의
-cancellation token도 취소한다. Handler는 cancellation을 존중해야 한다. 변경 작업의
-결과가 timeout이나 선택 변경 때문에 모호하면 자동 재시도하지 않는다.
+## Named pipe 보안 경계
 
-Handler가 cancellation을 무시하더라도 SDK는 실제 task가 끝날 때까지 request ID와
-16개 bounded 실행 slot 중 하나를 해제하지 않는다. 이 상태가 누적되면 새 요청을
-fail-closed하므로 상한을 늘리거나 자동 재연결로 우회하지 말고 분석 엔진의 취소 처리를
-수정한다.
+- desktop 경로는 TCP/WebSocket listener와 port를 열지 않는다.
+- pipe 이름은 `Windows 사용자 SID + serviceId`의 domain-separated SHA-256으로
+  사용자별 분리하며 원문 SID는 포함하지 않는다.
+- pipe는 Windows `CurrentUserOnly`로 만들고 다른 Windows 사용자 접근을 거부한다.
+- 연결 직후 pipe 양쪽에서 peer PID를 OS에 질의하고 OS가 보고한 process image를
+  `Path.GetFullPath`로 정규화한 값이 현재 `EndViewer.exe`의 정규화된 경로와 정확히
+  같은지 확인한다. GUI와 stdio relay가 서로 다른
+  실행 파일이면 요청을 읽거나 쓰기 전에 연결을 닫는다.
+- stdio relay 등록도 같은 EndViewer binary의 안정된 절대 경로 하나만 허용한다.
+- Context와 결과는 bounded schema를 통과하며 원문 전체나 exception detail을 log에
+  남기지 않는다.
+- 실행 중 EndViewer가 없으면 stdio endpoint는 명확한 `APPLICATION_NOT_RUNNING` 상태를
+  반환하고 임의 process나 중앙 bridge로 fallback하지 않는다.
+- 앱 종료 시 pipe와 in-flight request를 닫고, 재실행 시 새 process에 다시 연결한다.
 
-선택 변경 시 SDK는 내부 failure code `CONTEXT_CHANGED`를 보낸다. Core는 SDK의 raw
-detail을 MCP에 반사하지 않고 이 allowlist code를 고정 문구
-`Connector selection context changed; call get_context and retry`로 변환한다. Caller는
-read-only 분석에서 이 문구를 받으면 `get_context`부터 다시 읽고 이전·새 구간 결과를
-합치지 않는다. Mutation은 결과가 ambiguous할 수 있으므로 이 문구만 보고 자동
-재시도하지 않는다.
+별도 token을 없앤 것은 “인증 없이 TCP port를 공개한다”는 뜻이 아니다. stdio child는
+AI client가 시작하고 pipe는 같은 Windows 사용자와 same-image 검사로 제한된다. 다만 같은
+사용자 권한의 공격자가 허용된 EndViewer binary 자체를 relay mode로 실행하는 경우까지
+완전히 구분하는 암호학적 경계는 아니다. 회사는 EndViewer와
+업데이트 manifest를 서명하고 설치 경로 ACL, application allowlisting 및 low-privilege
+운영 정책을 적용해야 한다.
 
-`Origin` 없음은 process 신원을 증명하는 장치가 아니다. 같은 Windows 계정에서 token을
-가진 악성 process, 변조된 Node/.NET runtime 또는 탈취된 application process는 이
-프로토콜만으로 방어할 수 없다. 전용 OS account, application signing/allowlisting,
-secret ACL과 검증된 release가 함께 필요하다.
+## Perfetto/browser와의 구분
 
-## 분석 Skill 공급
+Perfetto와 browser connector는 웹 origin과 browser process를 넘어 통신하므로 이
+embedded named-pipe 경로를 사용하지 않는다. 그 경로는 계속 다음 구성으로 운영된다.
 
-WPF binary 안에 prompt나 Skill 본문을 넣지 않는다. 검증된 release의 정본 Skill을
-Claude/Codex 쪽에 별도로 설치한다.
-
-```powershell
-powershell.exe -NoProfile -File .\scripts\skills\install-skills.ps1 `
-  -Scope project -Target both -ProjectPath C:\work\android-analysis
-
-powershell.exe -NoProfile -File .\scripts\skills\verify-skills.ps1 `
-  -Scope project -Target both -ProjectPath C:\work\android-analysis
+```text
+Perfetto/browser ──authenticated loopback WebSocket──▶ 중앙 RELU AI Bridge
+Claude/Codex     ──authenticated HTTP MCP────────────▶ 중앙 RELU AI Bridge
 ```
 
-Skill은 분석 순서와 보고 형식만 정한다. 실제 권한과 함수는 항상 live
-`list_capabilities` 결과가 결정한다. 자세한 공급·checksum·업데이트 계약은
-[분석 Skill 설계와 배포](SKILLS_KO.md)를 따른다.
+따라서 중앙 경로에는 Node.js runtime, `config/local.json`, port `5746`, control token과
+connector별 token이 필요하다. 이 요구사항을 EndViewer desktop 사용자에게 적용해서는
+안 되며, 반대로 EndViewer의 tokenless named pipe 계약을 browser에 적용해서도 안 된다.
 
-## 검증 체크리스트
+## 분석 instructions 공급
 
-- `dotnet build sdk-dotnet/Relu.AI.Bridge.DesktopConnector.sln -c Release`
-- `dotnet run --project sdk-dotnet/tests/Relu.AI.Bridge.DesktopConnector.Tests/Relu.AI.Bridge.DesktopConnector.Tests.csproj -c Release`
-- `dotnet build examples/wpf-android-log-viewer/WpfAndroidLogViewer.Integration.csproj -c Release`
-- 공유 `compat/desktop-auth-v1.json`을 Node와 .NET test가 모두 통과
-- Unicode, decimal/exponent, duplicate JSON key 회귀 test 통과
-- Desktop endpoint의 missing/present/forged Origin test 통과
-- unknown app ID, 잘못된 audience, replay/identity swap 거부
-- 같은 instance의 live takeover 거부와 앱 재시작 secret 회전 확인
-- 선택 변경 중 요청 취소 및 handler 직전·직후 guard 확인
-- service example을 실제 `loadConfig`로 읽는 test 통과
-- full Node suite와 기존 browser/Perfetto 회귀 suite 통과
+EndViewer 분석 순서와 보고 형식은 embedded service definition에 고정하고 MCP `2025-06-18`
+`initialize` 응답의 `instructions`에 컴파일해 제공한다. 따라서 desktop 사용자는 별도 Skill을
+설치하지 않는다. Instructions는 Capability 권한을 추가하지 않으며 실제 함수/schema는
+같은 signed service definition과 handler 교집합이 결정한다.
+
+저장소의 별도 `skills/` 배포는 Perfetto/browser 중앙 workflow용이다. EndViewer가 이
+파일을 사용자 profile에 복사하거나 로그 안의 prompt/URL을 instructions로 로드해서는
+안 된다.
+
+## 개발·배포 체크리스트
+
+- EndViewer 한 개의 서명된 실행 파일에서 GUI/stdio mode가 모두 동작한다.
+- 최종 사용자 장비에 별도 RELU/Node 설치가 필요하지 않다.
+- desktop token, environment secret, RELU local JSON, project `.mcp.json`과 별도 Skill
+  설치가 없다.
+- EndViewer 분석 instructions가 signed service definition의
+  `initialize` `instructions`에 포함된다.
+- registrar가 Claude/Codex를 독립적으로 탐지하고 user-scope 등록을 idempotent하게
+  검증한다.
+- 앱이 소유하지 않은 같은 이름의 MCP 등록을 덮어쓰지 않는다.
+- 최초 등록 전 실행 중이던 client의 1회 restart/reload를 안내한다.
+- managed MCP 환경에서는 IT 사전 등록을 검증한다.
+- pipe가 `CurrentUserOnly`이고 다른 사용자 연결 테스트가 실패한다.
+- GUI 미실행, 종료, 재실행과 stdio relay 재연결을 검증한다.
+- selection 변경 중 취소 및 handler 전후 guard를 검증한다.
+- Capability input/output/전체 byte 제한을 검증한다.
+- 배포 경로와 binary signature/update chain을 검증한다.
+
+빌드와 실제 통합 시작점은
+[.NET SDK 문서](../sdk-dotnet/README_KO.md)와
+[WPF Android Log Viewer 예제](../examples/wpf-android-log-viewer/README_KO.md)를 따른다.

@@ -128,19 +128,29 @@ core_contract_blob=$(git -C "$PERFETTO_PROJECT_ROOT" rev-parse \
   "$release_tag:$core_contract_path")
 connector_contract_blob=$(git -C "$PERFETTO_PROJECT_ROOT" rev-parse \
   "$release_tag:$connector_contract_path")
-plugin_tree=$(git -C "$PERFETTO_PROJECT_ROOT" rev-parse \
-  "$release_tag:$(compat_value integration.source_plugin_path)")
-adapter_tree=$(git -C "$PERFETTO_PROJECT_ROOT" rev-parse \
-  "$release_tag:$(compat_value integration.source_adapter_path)")
+tagged_tree_oid() {
+  local relative=$1
+  local object_id
+  object_id=$(git -C "$PERFETTO_PROJECT_ROOT" rev-parse \
+    "$release_tag:$relative" 2>/dev/null) || \
+    die "tagged 필수 source tree 누락: $relative"
+  [ "$(git -C "$PERFETTO_PROJECT_ROOT" cat-file -t "$object_id" 2>/dev/null || true)" = tree ] || \
+    die "tagged 필수 source path가 tree가 아닙니다: $relative"
+  printf '%s\n' "$object_id"
+}
+plugin_tree=$(tagged_tree_oid "$(compat_value integration.source_plugin_path)")
+adapter_tree=$(tagged_tree_oid "$(compat_value integration.source_adapter_path)")
+core_bin_tree=$(tagged_tree_oid bin)
+core_src_tree=$(tagged_tree_oid src)
+core_web_tree=$(tagged_tree_oid web)
+embedded_sdk_tree=$(tagged_tree_oid sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector)
 created_utc=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-signed_tag_verified=false
-if [ "$require_signed" -eq 1 ]; then signed_tag_verified=true; fi
 
 python3 - "$stage_dir/release-manifest.json" "$RELU_COMPAT_FILE" "$PERFETTO_COMPAT_FILE" \
   "$release_tag" "$tag_object" "$release_commit" "$created_utc" \
   "$bundle_name" "$bundle_sha" "$bundle_size" "$core_contract_path" "$core_contract_blob" \
   "$connector_contract_path" "$connector_contract_blob" "$plugin_tree" "$adapter_tree" \
-  "$signed_tag_verified" <<'PY'
+  "$core_bin_tree" "$core_src_tree" "$core_web_tree" "$embedded_sdk_tree" <<'PY'
 import json
 import pathlib
 import sys
@@ -162,7 +172,10 @@ import sys
     connector_contract_blob,
     plugin_tree,
     adapter_tree,
-    signed_verified,
+    core_bin_tree,
+    core_src_tree,
+    core_web_tree,
+    embedded_sdk_tree,
 ) = sys.argv[1:]
 relu = json.loads(pathlib.Path(relu_path).read_text(encoding="utf-8"))
 connector = json.loads(pathlib.Path(connector_path).read_text(encoding="utf-8"))
@@ -179,7 +192,6 @@ manifest = {
         "commit": commit,
         "created_utc": created_utc,
         "annotated_tag": True,
-        "signed_tag_verified": signed_verified == "true",
     },
     "artifact": {
         "git_bundle": bundle,
@@ -210,6 +222,12 @@ manifest = {
         ],
     },
     "source_trees": {
+        "core": {
+            "bin": core_bin_tree,
+            "src": core_src_tree,
+            "web": core_web_tree,
+        },
+        "desktop": {"embedded_sdk": embedded_sdk_tree},
         "connectors": {
             "perfetto": {"plugin": plugin_tree, "adapter": adapter_tree}
         }

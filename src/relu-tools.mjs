@@ -39,7 +39,7 @@ const PERFETTO_CAPABILITIES = Object.freeze([
 
 export function createReluToolDefinitions() {
   return [
-    tool('list_sessions', 'Start here: list privacy-safe live RELU AI Bridge sessions across configured browser services, desktop applications, and Perfetto.', objectSchema({
+    tool('list_sessions', 'Start here: list privacy-safe live RELU AI Bridge sessions across configured browser services and Perfetto.', objectSchema({
       serviceId: string('Optional exact service id.', 64),
       activeOnly: { type: 'boolean', description: 'Filter by the connector-reported focus hint; never use this hint alone to authorize or target a mutation.' },
     }), { readOnlyHint: true }),

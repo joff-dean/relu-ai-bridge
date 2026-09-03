@@ -30,7 +30,10 @@ python3 - "$RELU_COMPAT_FILE" "$PERFETTO_COMPAT_FILE" \
   "$PERFETTO_PROJECT_ROOT/skills/manifest.json" \
   "$PERFETTO_PROJECT_ROOT/skills" \
   "$PERFETTO_PROJECT_ROOT/sdk/relu-web-connector.js" \
-  "$PERFETTO_PROJECT_ROOT/sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluDesktopConnectorOptions.cs" <<'PY'
+  "$PERFETTO_PROJECT_ROOT/sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluEmbeddedServiceDefinition.cs" \
+  "$PERFETTO_PROJECT_ROOT/sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluMcpStdioEntryPoint.cs" \
+  "$PERFETTO_PROJECT_ROOT/sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluAiClientRegistrar.cs" \
+  "$PERFETTO_PROJECT_ROOT/sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluEmbeddedBridgeHost.cs" <<'PY'
 import hashlib
 import json
 import pathlib
@@ -51,7 +54,10 @@ dotnet_project = pathlib.Path(sys.argv[9])
 skills_manifest_path = pathlib.Path(sys.argv[10])
 skills_root = pathlib.Path(sys.argv[11])
 web_connector_source = pathlib.Path(sys.argv[12]).read_text(encoding="utf-8")
-dotnet_options_source = pathlib.Path(sys.argv[13]).read_text(encoding="utf-8")
+dotnet_embedded_source = pathlib.Path(sys.argv[13]).read_text(encoding="utf-8")
+dotnet_stdio_source = pathlib.Path(sys.argv[14]).read_text(encoding="utf-8")
+dotnet_registrar_source = pathlib.Path(sys.argv[15]).read_text(encoding="utf-8")
+dotnet_host_source = pathlib.Path(sys.argv[16]).read_text(encoding="utf-8")
 
 def require(condition, label):
     if not condition:
@@ -156,7 +162,7 @@ def require_unique_regex(source, pattern, label, flags=0):
 
 require(relu["product"]["id"] == "relu-ai-bridge", "core product id")
 require(relu["product"]["name"] == "RELU AI Bridge", "core product name")
-require(relu["product"]["core_version"] == "0.6.0", "core version")
+require(relu["product"]["core_version"] == "0.7.0", "core version")
 require(package["name"] == relu["product"]["id"], "root package name")
 require(package["version"] == relu["product"]["core_version"], "root package version")
 require(sdk["name"] == "@company/relu-ai-connector", "SDK package name")
@@ -232,14 +238,17 @@ plugin_code = strip_javascript_comments(plugin_source, "Perfetto plugin")
 mcp_code = strip_javascript_comments(mcp_source, "MCP server")
 server_code = strip_javascript_comments(server_source, "health server")
 web_connector_code = strip_javascript_comments(web_connector_source, "web connector SDK")
-require('@"' not in dotnet_options_source and '@$"' not in dotnet_options_source and '"""' not in dotnet_options_source, ".NET connector unsupported string form")
-require(re.search(r"^[ \t]*#", dotnet_options_source, re.MULTILINE) is None, ".NET connector preprocessor directive")
-dotnet_options_code = strip_csharp_comments(dotnet_options_source, ".NET connector options")
+require('@"' not in dotnet_embedded_source and '@$"' not in dotnet_embedded_source and '"""' not in dotnet_embedded_source, ".NET embedded service unsupported string form")
+require(re.search(r"^[ \t]*#", dotnet_embedded_source, re.MULTILINE) is None, ".NET embedded service preprocessor directive")
+dotnet_embedded_code = strip_csharp_comments(dotnet_embedded_source, ".NET embedded service definition")
+dotnet_stdio_code = strip_csharp_comments(dotnet_stdio_source, ".NET embedded MCP stdio entry point")
+dotnet_registrar_code = strip_csharp_comments(dotnet_registrar_source, ".NET AI client registrar")
+dotnet_host_code = strip_csharp_comments(dotnet_host_source, ".NET embedded bridge host")
 require_unique_regex(plugin_code, r"\b(?:const|let|var)[ \t]+PLUGIN_VERSION[ \t]*=", "Perfetto plugin version declaration count")
 require_unique_regex(mcp_code, r"\bserverInfo\b[ \t]*:", "MCP serverInfo declaration count")
 require_unique_regex(server_code, r"['\"]/health['\"]", "health route declaration count")
 require_unique_regex(web_connector_code, r"\bthis\.connectorVersion[ \t]*=", "web connector version assignment count")
-require_unique_regex(dotnet_options_code, r"\b(?:public[ \t]+)?string[ \t]+ConnectorVersion[ \t]*\{", ".NET connector version declaration count")
+require_unique_regex(dotnet_embedded_code, r'^[ \t]*string[ \t]+version[ \t]*=', ".NET embedded service version declaration count", re.MULTILINE)
 require_unique_regex(plugin_code, r"^[ \t]*const PLUGIN_ID = 'io\.company\.RELUPerfettoBridge';[ \t]*$", "Perfetto plugin id", re.MULTILINE)
 require_unique_regex(plugin_code, rf"^[ \t]*const PLUGIN_VERSION = '{version}';[ \t]*$", "Perfetto plugin version", re.MULTILINE)
 require_unique_regex(plugin_code, r"^[ \t]*const COMMAND_SOURCE = 'RELU AI Bridge · Perfetto';[ \t]*$", "Perfetto plugin branding", re.MULTILINE)
@@ -248,12 +257,24 @@ require_unique_regex(plugin_code, r"^[ \t]*pluginVersion: PLUGIN_VERSION,[ \t]*$
 require_unique_regex(mcp_code, rf"serverInfo:\s*\{{\s*name:\s*'relu-ai-bridge',\s*version:\s*'{version}'\s*\}}", "MCP serverInfo")
 require_unique_regex(server_code, rf"if \(requestUrl\.pathname === '/health'\) \{{\s*return sendJson\(response, 200, \{{\s*ok: true,\s*name:\s*'relu-ai-bridge',\s*version:\s*'{version}',", "health identity")
 require_unique_regex(web_connector_code, rf"^[ \t]*this\.connectorVersion = String\(options\.connectorVersion \?\? '{version}'\);[ \t]*$", "web connector default version", re.MULTILINE)
-require_unique_regex(dotnet_options_code, rf'^[ \t]*public string ConnectorVersion \{{ get; init; \}} = "{version}";[ \t]*$', ".NET connector default version", re.MULTILINE)
+require_unique_regex(dotnet_embedded_code, rf'^[ \t]*string version = "{version}",[ \t]*$', ".NET embedded service default version", re.MULTILINE)
+require_unique_regex(dotnet_stdio_code, r'^[ \t]*private const string ProtocolVersion = "2025-06-18";[ \t]*$', ".NET embedded MCP protocol version", re.MULTILINE)
+require('"2026-07-28"' not in dotnet_stdio_code and '"server/discover"' not in dotnet_stdio_code, ".NET embedded MCP obsolete discovery contract")
+require_unique_regex(dotnet_stdio_code, r'if \(method == "initialize"\)', ".NET embedded MCP initialize lifecycle")
+require_unique_regex(dotnet_stdio_code, r'if \(method == "notifications/initialized"\)', ".NET embedded MCP initialized notification")
+require_unique_regex(dotnet_stdio_code, r'"tools/list" => Result\(id, ToolsListResult\(\)\)', ".NET embedded MCP tools/list route")
+require_unique_regex(dotnet_stdio_code, r'"tools/call" => await HandleToolCallAsync\(', ".NET embedded MCP tools/call route")
+require_unique_regex(dotnet_host_code, r'OptionalString\(arguments, "operationId", 128, minimumLength: 8\)', ".NET embedded operationId bounds")
+require_unique_regex(dotnet_registrar_code, r'\["mcp", "add", options\.ServerName, "--", executablePath, ReluMcpStdioEntryPoint\.StdioArgument\]', ".NET Codex user registration command")
+require_unique_regex(dotnet_registrar_code, r'\["mcp", "add", "--scope", "user", options\.ServerName, "--", executablePath, ReluMcpStdioEntryPoint\.StdioArgument\]', ".NET Claude user registration command")
+require_unique_regex(dotnet_registrar_code, r'return \$"Global\\\\Relu\.AI\.Bridge\.EndViewer\.McpRegistration\.\{Convert\.ToHexString\(digest\.AsSpan\(0, 12\)\)\}";', ".NET cross-session registrar mutex scope")
+require_unique_regex(dotnet_registrar_code, r'Path\.Combine\(localAppData, "Programs", "OpenAI", "Codex", "bin", "codex\.exe"\)', ".NET official Codex install candidate")
+require(re.search(r"public[ \t]+string[ \t]+ExecutablePath\b", dotnet_registrar_code) is None, ".NET registrar public executable path override")
 require(relu["connectors"][0]["number"] == 1, "connector number")
 require(relu["connectors"][0]["id"] == "perfetto", "connector id")
-require(relu["connectors"][0]["version"] == "0.6.0", "core connector version")
+require(relu["connectors"][0]["version"] == "0.7.0", "core connector version")
 require(relu["connectors"][0]["manifest"] == "connectors/perfetto-v58.2.json", "connector manifest path")
-require(data["connector"]["version"] == "0.6.0", "Perfetto connector version")
+require(data["connector"]["version"] == "0.7.0", "Perfetto connector version")
 require(data["connector"]["version"] == relu["connectors"][0]["version"], "core/connector version alignment")
 upstream = data["public_baseline"]
 require(upstream["repository"] == "https://github.com/google/perfetto.git", "Perfetto repository")

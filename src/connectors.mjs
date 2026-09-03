@@ -23,10 +23,8 @@ const RESUME_TTL_MS = 10 * 60_000;
 const MAX_CACHED_RESULT_BYTES = 16 * 1024 * 1024;
 const FORBIDDEN_JSON_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const GENERIC_AUTH_AUDIENCE = 'relu-ai-bridge://loopback/relu/ws';
-const DESKTOP_AUTH_AUDIENCE = 'relu-ai-bridge://loopback/relu/desktop/ws';
 const GENERIC_AUTH_NONCE = /^[a-f0-9]{64}$/u;
 const GENERIC_AUTH_PROOF = /^[a-f0-9]{64}$/u;
-const DESKTOP_APP_ID = /^[a-zA-Z][a-zA-Z0-9._-]{2,127}$/u;
 const CONNECTOR_FAILURE_MESSAGES = new Map([
   ['CONTEXT_CHANGED', 'Connector selection context changed; call get_context and retry'],
   ['TIMEOUT', 'Connector capability execution timed out'],
@@ -81,89 +79,6 @@ function boundedJson(value, maximumBytes, name) {
   return structuredClone(value);
 }
 
-function parseJsonWithoutDuplicateKeys(text, name) {
-  let offset = 0;
-  let nodes = 0;
-  const skipWhitespace = () => {
-    while (/[\u0009\u000a\u000d\u0020]/u.test(text[offset] ?? '')) offset += 1;
-  };
-  const parseString = () => {
-    if (text[offset] !== '"') throw new Error(`${name} is not valid JSON`);
-    const start = offset;
-    offset += 1;
-    while (offset < text.length) {
-      if (text[offset] === '"') {
-        offset += 1;
-        return JSON.parse(text.slice(start, offset));
-      }
-      if (text[offset] === '\\') offset += 1;
-      offset += 1;
-    }
-    throw new Error(`${name} is not valid JSON`);
-  };
-  const parseValue = (depth = 0) => {
-    nodes += 1;
-    if (nodes > MAX_JSON_NODES || depth > MAX_JSON_DEPTH) throw new Error(`${name} is too large or deeply nested`);
-    skipWhitespace();
-    const current = text[offset];
-    if (current === '"') {
-      parseString();
-      return;
-    }
-    if (current === '{') {
-      offset += 1;
-      skipWhitespace();
-      const keys = new Set();
-      if (text[offset] === '}') {
-        offset += 1;
-        return;
-      }
-      while (true) {
-        skipWhitespace();
-        const key = parseString();
-        if (keys.has(key)) throw new Error(`${name} contains a duplicate object key`);
-        keys.add(key);
-        skipWhitespace();
-        if (text[offset] !== ':') throw new Error(`${name} is not valid JSON`);
-        offset += 1;
-        parseValue(depth + 1);
-        skipWhitespace();
-        if (text[offset] === '}') {
-          offset += 1;
-          return;
-        }
-        if (text[offset] !== ',') throw new Error(`${name} is not valid JSON`);
-        offset += 1;
-      }
-    }
-    if (current === '[') {
-      offset += 1;
-      skipWhitespace();
-      if (text[offset] === ']') {
-        offset += 1;
-        return;
-      }
-      while (true) {
-        parseValue(depth + 1);
-        skipWhitespace();
-        if (text[offset] === ']') {
-          offset += 1;
-          return;
-        }
-        if (text[offset] !== ',') throw new Error(`${name} is not valid JSON`);
-        offset += 1;
-      }
-    }
-    const literal = text.slice(offset).match(/^(?:true|false|null|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)/u)?.[0];
-    if (!literal) throw new Error(`${name} is not valid JSON`);
-    offset += literal.length;
-  };
-  parseValue();
-  skipWhitespace();
-  if (offset !== text.length) throw new Error(`${name} is not valid JSON`);
-  return JSON.parse(text);
-}
-
 function requireString(value, name, maximumBytes) {
   if (typeof value !== 'string' || value.length === 0 || Buffer.byteLength(value) > maximumBytes) {
     throw new Error(`${name} is invalid`);
@@ -196,21 +111,6 @@ function genericAuthProof(token, role, serviceId, origin, clientNonce, serverNon
     .digest('hex');
 }
 
-function desktopAuthPayload(role, serviceId, appId, instanceId, clientNonce, serverNonce, registrationDigest = '') {
-  return stableJson([
-    'RELU_DESKTOP_CONNECTOR_AUTH', PROTOCOL_VERSION, DESKTOP_AUTH_AUDIENCE, role,
-    serviceId, appId, instanceId, clientNonce, serverNonce, registrationDigest,
-  ]);
-}
-
-function desktopAuthProof(token, role, serviceId, appId, instanceId, clientNonce, serverNonce, registrationDigest = '') {
-  return crypto.createHmac('sha256', token)
-    .update(desktopAuthPayload(
-      role, serviceId, appId, instanceId, clientNonce, serverNonce, registrationDigest,
-    ))
-    .digest('hex');
-}
-
 function requireExactKeys(value, allowed, name) {
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) throw new Error(`${name} contains an unsupported field`);
@@ -219,14 +119,6 @@ function requireExactKeys(value, allowed, name) {
 
 function pageBinding(origin, serviceId, clientId, serverNonce) {
   return hash([origin, serviceId, clientId, serverNonce]);
-}
-
-function desktopPeerIdentity(appId) {
-  return `relu-desktop://${hash(['relu-desktop-app', appId])}`;
-}
-
-function serviceClientKinds(service) {
-  return service.clientKinds ?? ['browser'];
 }
 
 function serviceExecutionGuardFields(service) {
@@ -238,10 +130,8 @@ function serviceExecutionGuardMode(service) {
     ?? (service.executionGuardFields === undefined ? 'strict_context_version' : 'projection');
 }
 
-function clientIndexKey(serviceId, clientKind, peerIdentity, clientId) {
-  return clientKind === 'browser'
-    ? `${serviceId}:${clientId}`
-    : `${serviceId}:desktop:${peerIdentity}:${clientId}`;
+function clientIndexKey(serviceId, origin, clientId) {
+  return `${serviceId}:${origin}:${clientId}`;
 }
 
 function bindingProjection(service, context, fields = service.bindingFields) {
@@ -275,8 +165,7 @@ function publicSession(session) {
     id: session.id,
     serviceId: session.service.id,
     serviceName: session.service.displayName,
-    clientKind: session.clientKind,
-    ...(session.appId ? { appId: session.appId } : {}),
+    clientKind: 'browser',
     connectorVersion: session.connectorVersion,
     sessionKey: hash([session.binding, session.contextBinding]).slice(0, 12),
     clientKey: session.binding.slice(0, 12),
@@ -381,7 +270,6 @@ export class ConnectorBroker {
     for (const raw of validated.records) {
       const service = this.services.get(raw?.serviceId);
       const allowedOrigin = service?.origins.includes(raw.origin)
-        || service?.desktopAppIds?.some((appId) => desktopPeerIdentity(appId) === raw.origin)
         || (raw?.serviceId === 'perfetto' && this.config.perfetto.allowedOrigins.includes(raw.origin));
       if (!allowedOrigin) {
         throw new Error('Connector operation ledger contains an invalid record');
@@ -453,10 +341,7 @@ export class ConnectorBroker {
       return;
     }
     this.connections.add(connection);
-    const connectionMetadata = {
-      ...metadata,
-      clientKind: metadata.clientKind ?? 'browser',
-    };
+    const connectionMetadata = { ...metadata };
     let session = null;
     let handshake = { stage: 'await_init' };
     let clientAuthenticated = false;
@@ -495,9 +380,7 @@ export class ConnectorBroker {
     const processMessage = async (text) => {
       if (terminal) return;
       try {
-        const message = connectionMetadata.clientKind === 'desktop'
-          ? parseJsonWithoutDuplicateKeys(text, 'desktop connector message')
-          : JSON.parse(text);
+        const message = JSON.parse(text);
         if (!message || typeof message !== 'object' || Array.isArray(message)) throw new Error('message must be a JSON object');
         if (!session) {
           if (handshake.stage === 'await_init') {
@@ -574,9 +457,7 @@ export class ConnectorBroker {
       this.dropConnectionPending(connection, 'Connector session disconnected');
       if (!session || this.sessions.get(session.id)?.connection !== connection) return;
       this.sessions.delete(session.id);
-      this.clientIndex.delete(clientIndexKey(
-        session.service.id, session.clientKind, session.peerIdentity, session.clientId,
-      ));
+      this.clientIndex.delete(clientIndexKey(session.service.id, session.origin, session.clientId));
       void this.audit.append({
         category: 'connector', action: 'session.disconnect', serviceId: session.service.id,
         sessionKey: publicSession(session).sessionKey,
@@ -591,9 +472,7 @@ export class ConnectorBroker {
   }
 
   touchResumeRecord(session) {
-    const record = this.resumeRecords.get(clientIndexKey(
-      session.service.id, session.clientKind, session.peerIdentity, session.clientId,
-    ));
+    const record = this.resumeRecords.get(clientIndexKey(session.service.id, session.origin, session.clientId));
     if (record) record.expiresAt = Date.now() + RESUME_TTL_MS;
   }
 
@@ -602,66 +481,26 @@ export class ConnectorBroker {
     if (message.protocolVersion !== PROTOCOL_VERSION) throw new Error('Unsupported connector protocol version');
     const serviceId = requireString(message.serviceId, 'serviceId', 64);
     const service = this.services.get(serviceId);
-    if (!service || !serviceClientKinds(service).includes(metadata.clientKind)) throw new Error('Authentication failed');
+    if (!service || !service.origins.includes(metadata.origin)) throw new Error('Authentication failed');
     if (typeof message.clientNonce !== 'string' || !GENERIC_AUTH_NONCE.test(message.clientNonce)) {
       throw new Error('clientNonce is invalid');
     }
+    requireExactKeys(message, new Set(['type', 'protocolVersion', 'serviceId', 'clientNonce']), 'auth_init');
     const serverNonce = crypto.randomBytes(32).toString('hex');
-    if (metadata.clientKind === 'browser') {
-      requireExactKeys(message, new Set(['type', 'protocolVersion', 'serviceId', 'clientNonce']), 'auth_init');
-      if (!service.origins.includes(metadata.origin)) throw new Error('Authentication failed');
-      const proof = genericAuthProof(
-        service.token, 'server', service.id, metadata.origin, message.clientNonce, serverNonce,
-      );
-      connection.sendJson({
-        type: 'auth_challenge',
-        protocolVersion: PROTOCOL_VERSION,
-        serviceId: service.id,
-        origin: metadata.origin,
-        clientNonce: message.clientNonce,
-        serverNonce,
-        proof,
-      });
-      return {
-        stage: 'await_proof', service, clientKind: 'browser', origin: metadata.origin,
-        peerIdentity: metadata.origin, clientNonce: message.clientNonce, serverNonce,
-      };
-    }
-    if (metadata.clientKind !== 'desktop') throw new Error('Authentication failed');
-    if (metadata.origin !== undefined) throw new Error('Desktop connector requests must not carry an Origin');
-    requireExactKeys(message, new Set([
-      'type', 'protocolVersion', 'serviceId', 'clientKind', 'appId', 'instanceId',
-      'audience', 'clientNonce',
-    ]), 'desktop auth_init');
-    if (message.clientKind !== 'desktop' || message.audience !== DESKTOP_AUTH_AUDIENCE) {
-      throw new Error('Desktop connector authentication audience is invalid');
-    }
-    const appId = requireString(message.appId, 'appId', 128);
-    const instanceId = requireString(message.instanceId, 'instanceId', 128);
-    if (!DESKTOP_APP_ID.test(appId) || !CLIENT_ID.test(instanceId)
-      || service.desktopAppIds?.length !== 1 || service.desktopAppIds[0] !== appId) {
-      throw new Error('Authentication failed');
-    }
-    const proof = desktopAuthProof(
-      service.token, 'server', service.id, appId, instanceId,
-      message.clientNonce, serverNonce,
+    const proof = genericAuthProof(
+      service.token, 'server', service.id, metadata.origin, message.clientNonce, serverNonce,
     );
     connection.sendJson({
       type: 'auth_challenge',
       protocolVersion: PROTOCOL_VERSION,
       serviceId: service.id,
-      clientKind: 'desktop',
-      appId,
-      instanceId,
-      audience: DESKTOP_AUTH_AUDIENCE,
+      origin: metadata.origin,
       clientNonce: message.clientNonce,
       serverNonce,
       proof,
     });
     return {
-      stage: 'await_proof', service, clientKind: 'desktop', appId, instanceId,
-      audience: DESKTOP_AUTH_AUDIENCE, peerIdentity: desktopPeerIdentity(appId),
-      clientNonce: message.clientNonce, serverNonce,
+      stage: 'await_proof', service, origin: metadata.origin, clientNonce: message.clientNonce, serverNonce,
     };
   }
 
@@ -669,72 +508,31 @@ export class ConnectorBroker {
     if (message.type !== 'auth_response') throw new Error('Second message must be auth_response');
     if (message.protocolVersion !== PROTOCOL_VERSION
       || message.serviceId !== handshake.service.id
-      || metadata.clientKind !== handshake.clientKind
       || message.clientNonce !== handshake.clientNonce
       || message.serverNonce !== handshake.serverNonce) {
       throw new Error('Connector authentication binding changed');
     }
-    if (handshake.clientKind === 'browser') {
-      requireExactKeys(message, new Set([
-        'type', 'protocolVersion', 'serviceId', 'clientNonce', 'serverNonce', 'registration', 'proof',
-      ]), 'auth_response');
-      if (metadata.origin !== handshake.origin) throw new Error('Connector authentication binding changed');
-    } else {
-      requireExactKeys(message, new Set([
-        'type', 'protocolVersion', 'serviceId', 'clientKind', 'appId', 'instanceId',
-        'audience', 'clientNonce', 'serverNonce', 'registrationJson', 'proof',
-      ]), 'desktop auth_response');
-      if (message.clientKind !== 'desktop' || message.appId !== handshake.appId
-        || message.instanceId !== handshake.instanceId || message.audience !== handshake.audience) {
-        throw new Error('Desktop connector authentication binding changed');
-      }
+    requireExactKeys(message, new Set([
+      'type', 'protocolVersion', 'serviceId', 'clientNonce', 'serverNonce', 'registration', 'proof',
+    ]), 'auth_response');
+    if (metadata.origin !== handshake.origin) throw new Error('Connector authentication binding changed');
+    if (!message.registration || typeof message.registration !== 'object' || Array.isArray(message.registration)) {
+      throw new Error('registration is invalid');
     }
-    let registration;
-    let registrationDigest;
-    if (handshake.clientKind === 'browser') {
-      if (!message.registration || typeof message.registration !== 'object' || Array.isArray(message.registration)) {
-        throw new Error('registration is invalid');
-      }
-      requireExactKeys(message.registration, new Set(['client', 'context', 'active']), 'registration');
-      registration = boundedJson(
-        message.registration, this.config.connectors.maxContextBytes + 16_384, 'registration',
-      );
-      registrationDigest = hash(registration);
-    } else {
-      const registrationJson = requireString(
-        message.registrationJson, 'registrationJson', this.config.connectors.maxContextBytes + 16_384,
-      );
-      registrationDigest = hash(registrationJson);
-    }
+    requireExactKeys(message.registration, new Set(['client', 'context', 'active']), 'registration');
+    const registration = boundedJson(
+      message.registration, this.config.connectors.maxContextBytes + 16_384, 'registration',
+    );
+    const registrationDigest = hash(registration);
     if (typeof message.proof !== 'string' || !GENERIC_AUTH_PROOF.test(message.proof)) {
       throw new Error('Connector authentication proof is invalid');
     }
-    const expected = handshake.clientKind === 'browser'
-      ? genericAuthProof(
-        handshake.service.token, 'client', handshake.service.id, handshake.origin,
-        handshake.clientNonce, handshake.serverNonce, registrationDigest,
-      )
-      : desktopAuthProof(
-        handshake.service.token, 'client', handshake.service.id, handshake.appId, handshake.instanceId,
-        handshake.clientNonce, handshake.serverNonce, registrationDigest,
-      );
+    const expected = genericAuthProof(
+      handshake.service.token, 'client', handshake.service.id, handshake.origin,
+      handshake.clientNonce, handshake.serverNonce, registrationDigest,
+    );
     if (!secureEqual(message.proof, expected)) throw new Error('Connector authentication proof is invalid');
-    if (handshake.clientKind === 'desktop') {
-      const parsed = parseJsonWithoutDuplicateKeys(message.registrationJson, 'registrationJson');
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('registration is invalid');
-      requireExactKeys(parsed, new Set(['client', 'context', 'active']), 'registration');
-      registration = boundedJson(
-        parsed, this.config.connectors.maxContextBytes + 16_384, 'registration',
-      );
-    }
-    return {
-      service: handshake.service,
-      registration,
-      clientKind: handshake.clientKind,
-      peerIdentity: handshake.peerIdentity,
-      appId: handshake.appId ?? null,
-      instanceId: handshake.instanceId ?? null,
-    };
+    return { service: handshake.service, registration };
   }
 
   acceptHello(connection, metadata, message, authenticated) {
@@ -742,25 +540,11 @@ export class ConnectorBroker {
     const requestedServiceId = requireString(message.client?.serviceId, 'client.serviceId', 64);
     const service = authenticated.service;
     if (!service || requestedServiceId !== service.id) throw new Error('Authenticated service binding changed');
-    const clientKind = authenticated.clientKind;
-    let clientId;
-    if (clientKind === 'browser') {
-      if (!service.origins.includes(metadata.origin)) throw new Error('Connector origin is not allowed for this service');
-      if (message.client?.clientKind !== undefined && message.client.clientKind !== 'browser') {
-        throw new Error('Browser connector clientKind is invalid');
-      }
-      clientId = requireString(message.client?.clientId, 'client.clientId', 128);
-    } else {
-      requireExactKeys(message.client, new Set([
-        'serviceId', 'clientKind', 'appId', 'instanceId', 'connectorVersion', 'capabilities', 'resumeSecret',
-      ]), 'desktop registration.client');
-      if (message.client?.clientKind !== 'desktop'
-        || message.client?.appId !== authenticated.appId
-        || message.client?.instanceId !== authenticated.instanceId) {
-        throw new Error('Desktop registration identity changed');
-      }
-      clientId = requireString(message.client.instanceId, 'client.instanceId', 128);
+    if (!service.origins.includes(metadata.origin)) throw new Error('Connector origin is not allowed for this service');
+    if (message.client?.clientKind !== undefined && message.client.clientKind !== 'browser') {
+      throw new Error('Browser connector clientKind is invalid');
     }
+    const clientId = requireString(message.client?.clientId, 'client.clientId', 128);
     if (!CLIENT_ID.test(clientId)) throw new Error('client.clientId is invalid');
     const connectorVersion = requireString(message.client?.connectorVersion, 'client.connectorVersion', 100);
     const advertised = message.client?.capabilities ?? [];
@@ -770,37 +554,31 @@ export class ConnectorBroker {
     }
     if (message.active !== undefined && typeof message.active !== 'boolean') throw new Error('active must be a boolean');
     const configuredClient = new Set(service.capabilities
-      .filter((item) => item.transport === clientKind)
+      .filter((item) => item.transport === 'browser')
       .map((item) => item.name));
     if (advertised.some((name) => !configuredClient.has(name))) {
       throw new Error('Client advertised an unconfigured capability for its client kind');
     }
     const supportedClient = new Set(advertised);
     const capabilities = service.capabilities.filter((item) => (
-      item.transport === 'http' || (item.transport === clientKind && supportedClient.has(item.name))
+      item.transport === 'http' || (item.transport === 'browser' && supportedClient.has(item.name))
     ));
     const context = boundedJson(message.context ?? {}, this.config.connectors.maxContextBytes, 'connector context');
     validateJsonSchema(service.contextSchema, context, { maxNodes: MAX_JSON_NODES, maxDepth: MAX_JSON_DEPTH });
     const contextBinding = resourceBinding(service, context);
     const contextExecutionBinding = executionBinding(service, context);
-    const peerIdentity = authenticated.peerIdentity;
-    const resumeKey = clientIndexKey(service.id, clientKind, peerIdentity, clientId);
+    const resumeKey = clientIndexKey(service.id, metadata.origin, clientId);
     const existingResume = this.resumeRecords.get(resumeKey);
     let binding;
     let resumeSecret;
     let generation;
     if (existingResume && existingResume.expiresAt > Date.now()) {
-      const identityMatches = existingResume.peerIdentity === peerIdentity
-        && existingResume.clientKind === clientKind;
       const secretMatches = secureEqual(message.client?.resumeSecret, existingResume.secret);
-      const desktopRestart = clientKind === 'desktop'
-        && message.client?.resumeSecret === undefined
-        && !this.clientIndex.has(resumeKey);
-      if (!identityMatches || (!secretMatches && !desktopRestart)) {
+      if (!secretMatches) {
         throw new Error('A valid reconnect secret is required for this client id');
       }
       binding = existingResume.binding;
-      resumeSecret = desktopRestart ? randomId('resume_') : existingResume.secret;
+      resumeSecret = existingResume.secret;
       generation = existingResume.generation + 1;
     } else {
       if (message.client?.resumeSecret !== undefined) {
@@ -810,13 +588,11 @@ export class ConnectorBroker {
         throw new Error('Reconnect record limit reached');
       }
       resumeSecret = randomId('resume_');
-      binding = clientKind === 'browser'
-        ? pageBinding(metadata.origin, service.id, clientId, randomId('binding_'))
-        : hash(['desktop-client', service.id, peerIdentity, clientId]);
+      binding = pageBinding(metadata.origin, service.id, clientId, randomId('binding_'));
       generation = 1;
     }
     this.resumeRecords.set(resumeKey, {
-      binding, secret: resumeSecret, peerIdentity, clientKind, generation,
+      binding, secret: resumeSecret, generation,
       contextBinding, executionBinding: contextExecutionBinding,
       expiresAt: Date.now() + RESUME_TTL_MS,
     });
@@ -836,9 +612,8 @@ export class ConnectorBroker {
     const now = new Date().toISOString();
     const session = {
       id, binding, contextBinding, executionBinding: contextExecutionBinding,
-      generation, resumeSecret, clientId, clientKind, peerIdentity,
-      appId: authenticated.appId, service, connectorVersion,
-      capabilities, connection, origin: peerIdentity, context, contextVersion: 1, connectedAt: now,
+      generation, resumeSecret, clientId, service, connectorVersion,
+      capabilities, connection, origin: metadata.origin, context, contextVersion: 1, connectedAt: now,
       lastSeenAt: now, contextUpdatedAt: now, active: message.active === true,
     };
     this.sessions.set(id, session);
@@ -932,7 +707,7 @@ export class ConnectorBroker {
         session.executionBinding = nextExecutionBinding;
         session.generation += 1;
         const record = this.resumeRecords.get(clientIndexKey(
-          session.service.id, session.clientKind, session.peerIdentity, session.clientId,
+          session.service.id, session.origin, session.clientId,
         ));
         if (record) {
           record.contextBinding = nextBinding;
@@ -1065,8 +840,7 @@ export class ConnectorBroker {
         serviceId: session.service.id,
         serviceName: session.service.displayName,
         origin: session.origin,
-        clientKind: session.clientKind,
-        appId: session.appId,
+        clientKind: 'browser',
         executionGuardMode: serviceExecutionGuardMode(session.service),
         executionGuardFields: [...serviceExecutionGuardFields(session.service)],
         pageBinding: session.binding,
@@ -1492,7 +1266,7 @@ export class ConnectorBroker {
       if (begun.duplicate) return await begun.outcome;
       operation = begun.record;
     }
-    if (capability.transport === 'browser' || capability.transport === 'desktop') {
+    if (capability.transport === 'browser') {
       let outcome;
       try {
         // beginOperation persists to disk and yields the event loop. Revalidate

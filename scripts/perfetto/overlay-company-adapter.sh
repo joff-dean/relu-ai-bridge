@@ -9,19 +9,79 @@ usage() {
   cat <<'EOF'
 사용법:
   scripts/perfetto/overlay-company-adapter.sh [--refresh] \
-    COMPANY_ADAPTER_DIR COMPANY_PERFETTO_DIR EXPECTED_HEAD
+    COMPANY_ADAPTER_DIR COMPANY_PERFETTO_DIR EXPECTED_HEAD EXPECTED_ADAPTER_SHA256
+  scripts/perfetto/overlay-company-adapter.sh --print-source-sha256 COMPANY_ADAPTER_DIR
 
 COMPANY_ADAPTER_DIR은 반드시 이 외부 프로젝트 checkout 밖에 있어야 하며,
 다음 COMPANY_ADAPTER.json을 포함해야 한다.
   {"schema_version":1,"company_perfetto_commit":"40자리 SHA","base_adapter":"v58"}
 
 기본 v58 adapter를 .git/relu-ai-bridge-backups에 백업한 뒤 내부 adapter로 교체한다.
+EXPECTED_ADAPTER_SHA256는 별도 검토·승인한 payload inventory SHA-256이다.
 EOF
 }
 
+company_adapter_payload_digest() {
+  python3 - "$1" <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+import stat
+import sys
+import unicodedata
+
+root = pathlib.Path(sys.argv[1])
+inventory = {}
+seen = {}
+for current, directories, files in os.walk(root, topdown=True, followlinks=False):
+    current_path = pathlib.Path(current)
+    for directory in directories:
+        candidate = current_path / directory
+        if candidate.is_symlink():
+            raise SystemExit(f"company adapter directory symlink: {candidate}")
+    for filename in files:
+        candidate = current_path / filename
+        relative = candidate.relative_to(root).as_posix()
+        if relative == "COMPANY_ADAPTER.json":
+            continue
+        if candidate.is_symlink() or not candidate.is_file():
+            raise SystemExit(f"company adapter non-regular file: {relative}")
+        key = unicodedata.normalize("NFC", relative).casefold()
+        if key in seen and seen[key] != relative:
+            raise SystemExit(f"company adapter case/Unicode collision: {seen[key]} / {relative}")
+        seen[key] = relative
+        metadata = candidate.stat()
+        content = candidate.read_bytes()
+        inventory[relative] = (
+            hashlib.sha256(content).hexdigest(),
+            len(content),
+            1 if stat.S_IMODE(metadata.st_mode) & 0o111 else 0,
+        )
+if "index.ts" not in inventory:
+    raise SystemExit("company adapter index.ts가 없습니다")
+encoded = json.dumps(
+    inventory,
+    ensure_ascii=False,
+    sort_keys=True,
+    separators=(",", ":"),
+).encode("utf-8")
+print(hashlib.sha256(encoded).hexdigest())
+PY
+}
+
+if [ "${1:-}" = --print-source-sha256 ]; then
+  [ "$#" -eq 2 ] || { usage >&2; exit 2; }
+  require_command python3
+  digest_source=$(canonical_existing_dir "$2")
+  assert_disjoint_trees "$PERFETTO_PROJECT_ROOT" "$digest_source"
+  company_adapter_payload_digest "$digest_source"
+  exit 0
+fi
+
 refresh=0
 case "${1:-}" in --refresh) refresh=1; shift ;; -h|--help) usage; exit 0 ;; esac
-[ "$#" -eq 3 ] || { usage >&2; exit 2; }
+[ "$#" -eq 4 ] || { usage >&2; exit 2; }
 require_command git
 require_command python3
 assert_compatibility_alignment
@@ -29,10 +89,13 @@ assert_compatibility_alignment
 company_adapter=$(canonical_existing_dir "$1")
 company_perfetto=$(canonical_existing_dir "$2")
 expected_head=$3
+expected_adapter_sha256=$4
 assert_disjoint_trees "$PERFETTO_PROJECT_ROOT" "$company_adapter"
 assert_disjoint_trees "$PERFETTO_PROJECT_ROOT" "$company_perfetto"
 assert_disjoint_trees "$company_adapter" "$company_perfetto"
 printf '%s\n' "$expected_head" | grep -Eq '^[0-9a-f]{40}$' || die "EXPECTED_HEAD는 40자리 SHA여야 합니다"
+printf '%s\n' "$expected_adapter_sha256" | grep -Eq '^[0-9a-f]{64}$' || \
+  die "EXPECTED_ADAPTER_SHA256는 64자리 SHA-256이어야 합니다"
 assert_git_worktree_root "$company_perfetto"
 assert_git_metadata_outside_project_root "$company_perfetto"
 assert_exact_head "$company_perfetto" "$expected_head"
@@ -54,7 +117,22 @@ import pathlib
 import re
 import sys
 
-data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+def reject_duplicates(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise SystemExit("company adapter manifest duplicate key")
+        result[key] = value
+    return result
+
+data = json.loads(
+    pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"),
+    object_pairs_hook=reject_duplicates,
+)
+if not isinstance(data, dict) or set(data) != {
+    "schema_version", "company_perfetto_commit", "base_adapter"
+}:
+    raise SystemExit("company adapter manifest field contract 불일치")
 if data.get("schema_version") != 1 or data.get("base_adapter") != "v58":
     raise SystemExit("company adapter manifest contract 불일치")
 commit = data.get("company_perfetto_commit", "")
@@ -64,6 +142,10 @@ print(commit)
 PY
 ) || die "COMPANY_ADAPTER.json 검증 실패"
 [ "$manifest_commit" = "$expected_head" ] || die "adapter 대상 commit과 실제 company HEAD가 다릅니다"
+actual_adapter_sha256=$(company_adapter_payload_digest "$company_adapter") || \
+  die "company adapter payload digest 계산 실패"
+[ "$actual_adapter_sha256" = "$expected_adapter_sha256" ] || \
+  die "company adapter payload가 외부 승인 SHA-256과 다릅니다"
 
 plugin_rel=$(compat_value integration.target_plugin_path)
 adapter_rel=$(compat_value integration.target_adapter_path)
@@ -131,6 +213,10 @@ mv -- "$adapter_target" "$backup_path"
 mv -- "$stage_dir" "$adapter_target"
 [ -f "$adapter_target/index.ts" ] || die "company adapter 설치 후 index.ts가 없습니다"
 [ -f "$adapter_target/.company-adapter-applied" ] || die "company adapter 관리 표식이 없습니다"
+"$SCRIPT_DIR/verify-integration.sh" --target company \
+  --expected-head "$expected_head" --company-adapter-dir "$company_adapter" \
+  --expected-company-adapter-sha256 "$expected_adapter_sha256" \
+  "$company_perfetto"
 transaction_active=0
 info "company-only adapter 적용 완료"
 info "이전 adapter 백업: $backup_dir"

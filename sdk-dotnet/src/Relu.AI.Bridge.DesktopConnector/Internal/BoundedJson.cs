@@ -100,11 +100,9 @@ internal static class BoundedJson
                 }
                 break;
             case JsonValueKind.Number:
-                if (!value.TryGetDouble(out var number)
-                    || double.IsNaN(number)
-                    || double.IsInfinity(number))
+                if (!EmbeddedContextProtocol.TryCreateCanonicalNumberKey(value, out _))
                 {
-                    throw new InvalidDataException($"{name} contains a non-finite number.");
+                    throw new InvalidDataException($"{name} contains an oversized or invalid number.");
                 }
                 break;
             case JsonValueKind.True:
