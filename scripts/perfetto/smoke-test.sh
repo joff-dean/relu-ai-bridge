@@ -6,10 +6,10 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 source "$SCRIPT_DIR/common.sh"
 
 case "${1:-}" in -h|--help)
-  printf '%s\n' '사용법: scripts/perfetto/smoke-test.sh [PERFETTO_V57_2_DIR]'
+  printf '%s\n' '사용법: scripts/perfetto/smoke-test.sh [PERFETTO_V58_2_DIR]'
   exit 0
 ;; esac
-[ "$#" -le 1 ] || die "사용법: scripts/perfetto/smoke-test.sh [PERFETTO_V57_2_DIR]"
+[ "$#" -le 1 ] || die "사용법: scripts/perfetto/smoke-test.sh [PERFETTO_V58_2_DIR]"
 require_command git
 require_command python3
 assert_compatibility_alignment
@@ -156,7 +156,7 @@ def require_unique_regex(source, pattern, label, flags=0):
 
 require(relu["product"]["id"] == "relu-ai-bridge", "core product id")
 require(relu["product"]["name"] == "RELU AI Bridge", "core product name")
-require(relu["product"]["core_version"] == "0.5.0", "core version")
+require(relu["product"]["core_version"] == "0.6.0", "core version")
 require(package["name"] == relu["product"]["id"], "root package name")
 require(package["version"] == relu["product"]["core_version"], "root package version")
 require(sdk["name"] == "@company/relu-ai-connector", "SDK package name")
@@ -251,15 +251,15 @@ require_unique_regex(web_connector_code, rf"^[ \t]*this\.connectorVersion = Stri
 require_unique_regex(dotnet_options_code, rf'^[ \t]*public string ConnectorVersion \{{ get; init; \}} = "{version}";[ \t]*$', ".NET connector default version", re.MULTILINE)
 require(relu["connectors"][0]["number"] == 1, "connector number")
 require(relu["connectors"][0]["id"] == "perfetto", "connector id")
-require(relu["connectors"][0]["version"] == "0.5.0", "core connector version")
-require(relu["connectors"][0]["manifest"] == "connectors/perfetto-v57.2.json", "connector manifest path")
-require(data["connector"]["version"] == "0.5.0", "Perfetto connector version")
+require(relu["connectors"][0]["version"] == "0.6.0", "core connector version")
+require(relu["connectors"][0]["manifest"] == "connectors/perfetto-v58.2.json", "connector manifest path")
+require(data["connector"]["version"] == "0.6.0", "Perfetto connector version")
 require(data["connector"]["version"] == relu["connectors"][0]["version"], "core/connector version alignment")
 upstream = data["public_baseline"]
 require(upstream["repository"] == "https://github.com/google/perfetto.git", "Perfetto repository")
-require(upstream["release"] == "v57.2", "Perfetto release")
-require(upstream["tag_object_sha"] == "24bdfb9dfa2dc92883761426dd94259756fa197e", "Perfetto tag object")
-require(upstream["commit_sha"] == "da1d152cff27890903d158fe96751de3aab883cc", "Perfetto commit")
+require(upstream["release"] == "v58.2", "Perfetto release")
+require(upstream["tag_object_sha"] == "9e9bdafee101a7bb2eac57f60d14c5ec1fa30989", "Perfetto tag object")
+require(upstream["commit_sha"] == "add693d8b338ba9599dbcbc3e300b1ab8c000897", "Perfetto commit")
 require(re.fullmatch(r"[0-9a-f]{40}", upstream["commit_sha"]), "Perfetto commit format")
 integration = data["integration"]
 require(integration["source_plugin_path"] == "plugin/io.company.RELUPerfettoBridge", "source plugin path")

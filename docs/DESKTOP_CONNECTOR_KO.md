@@ -1,6 +1,6 @@
 # Windows Desktop Connector 및 WPF 통합 설계
 
-RELU AI Bridge 0.5.0은 사람이 실행해 둔 Windows 분석 프로그램을 Claude/Codex의
+RELU AI Bridge 0.6.0은 사람이 실행해 둔 Windows 분석 프로그램을 Claude/Codex의
 로컬 MCP 작업 공간에 연결한다. 화면을 캡처하거나 UI Automation으로 조작하는 방식이
 아니라, 기존 프로그램의 분석 계층이 현재 선택 구간과 제한된 조회 함수를 직접
 제공하는 구조다.

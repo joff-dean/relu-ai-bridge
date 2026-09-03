@@ -35,6 +35,7 @@ while [ "$#" -gt 0 ]; do
 done
 [ -n "${perfetto_dir:-}" ] || { usage >&2; exit 2; }
 
+assert_perfetto_build_host
 perfetto_dir=$(canonical_existing_dir "$perfetto_dir")
 "$SCRIPT_DIR/verify-integration.sh" "$perfetto_dir"
 

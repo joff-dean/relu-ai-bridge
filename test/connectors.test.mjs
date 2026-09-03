@@ -224,7 +224,7 @@ function desktopRegistration(overrides = {}) {
     client: {
       serviceId: 'android-log-viewer', clientKind: 'desktop',
       appId: 'com.relu.AndroidLogViewer', instanceId: 'wpf_instance_one',
-      connectorVersion: '0.5.0', capabilities: ['get_selection_stats', 'focus_range'],
+      connectorVersion: '0.6.0', capabilities: ['get_selection_stats', 'focus_range'],
     },
     context: {
       logResourceId: 'log-001', datasetRevision: 'rev-42',

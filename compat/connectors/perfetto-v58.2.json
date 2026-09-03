@@ -5,17 +5,17 @@
     "number": 1,
     "id": "perfetto",
     "name": "Perfetto",
-    "version": "0.5.0",
-    "adapter_contract": "v57",
-    "compatible_relu_core_versions": ["0.5.0"]
+    "version": "0.6.0",
+    "adapter_contract": "v58",
+    "compatible_relu_core_versions": ["0.6.0"]
   },
   "public_baseline": {
     "repository": "https://github.com/google/perfetto.git",
-    "release": "v57.2",
-    "tag_ref": "refs/tags/v57.2",
-    "tag_object_sha": "24bdfb9dfa2dc92883761426dd94259756fa197e",
-    "commit_sha": "da1d152cff27890903d158fe96751de3aab883cc",
-    "short_commit": "da1d152"
+    "release": "v58.2",
+    "tag_ref": "refs/tags/v58.2",
+    "tag_object_sha": "9e9bdafee101a7bb2eac57f60d14c5ec1fa30989",
+    "commit_sha": "add693d8b338ba9599dbcbc3e300b1ab8c000897",
+    "short_commit": "add693d8"
   },
   "integration": {
     "plugin_id": "io.company.RELUPerfettoBridge",
@@ -24,7 +24,7 @@
     "target_plugin_path": "ui/src/plugins/io.company.RELUPerfettoBridge",
     "target_adapter_path": "ui/src/perfetto_adapter",
     "default_plugins_file": "ui/src/core/embedder/default_plugins.ts",
-    "enable_patch": "integration/patches/perfetto-v57.2-enable-default-plugin.patch"
+    "enable_patch": "integration/patches/perfetto-v58.2-enable-default-plugin.patch"
   },
   "company_integration_policy": {
     "metadata_scope": "company-internal-only",

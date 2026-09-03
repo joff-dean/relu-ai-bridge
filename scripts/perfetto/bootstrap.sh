@@ -9,8 +9,8 @@ usage() {
   cat <<'EOF'
 사용법: scripts/perfetto/bootstrap.sh [PERFETTO_DIR]
 
-공식 Perfetto v57.2를 별도 작업공간에 clone하고 정확한 commit을 checkout한다.
-기본 경로는 프로젝트 바깥의 ../.relu-ai-bridge-work/perfetto-v57.2 이다.
+공식 Perfetto v58.2를 별도 작업공간에 clone하고 정확한 commit을 checkout한다.
+기본 경로는 프로젝트 바깥의 ../.relu-ai-bridge-work/perfetto-v58.2 이다.
 public baseline bundle의 object closure를 위해 tag ancestry는 shallow로 자르지 않는다.
 기존 저장소의 remote, HEAD 또는 변경 상태가 다르면 수정하지 않고 중단한다.
 EOF
@@ -22,14 +22,14 @@ esac
 [ "$#" -le 1 ] || { usage >&2; exit 2; }
 
 require_command git
-require_command python3
+assert_python_310
 assert_compatibility_alignment
 
 upstream_url=$(compat_value public_baseline.repository)
 upstream_tag=$(compat_value public_baseline.release)
 upstream_tag_object=$(compat_value public_baseline.tag_object_sha)
 upstream_commit=$(compat_value public_baseline.commit_sha)
-default_workspace="$PERFETTO_PROJECT_ROOT/../.relu-ai-bridge-work/perfetto-v57.2"
+default_workspace="$PERFETTO_PROJECT_ROOT/../.relu-ai-bridge-work/perfetto-v58.2"
 target=${1:-$default_workspace}
 assert_destination_outside_project_root "$target"
 

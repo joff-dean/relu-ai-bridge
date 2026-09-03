@@ -69,7 +69,6 @@ export async function fixture(options = {}) {
     },
     approvals: {
       policy: 'manual',
-      enforceMutatingToolGrants: true,
       allowPersistentGrants: true,
       preapprovedScopes: [],
     },

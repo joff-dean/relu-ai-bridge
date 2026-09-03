@@ -1,13 +1,13 @@
 # RELU AI Bridge · Perfetto Connector #1
 
-이 디렉터리는 Google Perfetto `v57.2` (`da1d152cff27890903d158fe96751de3aab883cc`)
+이 디렉터리는 Google Perfetto `v58.2` (`add693d8b338ba9599dbcbc3e300b1ab8c000897`)
 소스 트리에 overlay하는 in-tree UI 플러그인이다. 공식 UI는 임의의 외부
 플러그인을 runtime side-load하지 않으므로 Perfetto UI와 함께 빌드해야 한다.
 
 ## Overlay 경로
 
 ```text
-이 저장소                                      Perfetto v57.2
+이 저장소                                      Perfetto v58.2
 plugin/io.company.RELUPerfettoBridge/    ->   ui/src/plugins/io.company.RELUPerfettoBridge/
 perfetto_adapter/                        ->   ui/src/perfetto_adapter/
 ```
@@ -99,7 +99,8 @@ loopback HTTP UI 실행 방식을 사용해야 한다.
 
 ## upstream 자체 검증
 
-overlay 후 공식 환경에서 다음 검증을 실행한다.
+overlay 후 Python 3.10 이상인 공식 환경에서 다음 검증을 실행한다. macOS ARM64에서는
+Rosetta 2 또는 Java 11 이상 runtime도 준비한다.
 
 ```bash
 tools/install-build-deps --ui

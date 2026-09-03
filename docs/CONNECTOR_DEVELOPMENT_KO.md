@@ -10,7 +10,7 @@ publish하지 않는다. 검증된 RELU release와 SDK version을 함께 고정�
 
 - 사내 registry: 보안 검토한 release의 `sdk/`만 내부 packaging 저장소로 복사하고,
   회사 scope/name을 확정한 사내 manifest에서만 `private`를 제거해 내부 registry에
-  publish한다. 서비스 lockfile은 정확한 `0.5.0` artifact digest를 고정한다.
+  publish한다. 서비스 lockfile은 정확한 `0.6.0` artifact digest를 고정한다.
 - vendoring: 서비스 저장소의 `vendor/relu-ai-connector/`에 검토한 `sdk/` 파일을
   복사하고 `"@company/relu-ai-connector": "file:./vendor/relu-ai-connector"`처럼
   상대 file dependency를 사용한다.

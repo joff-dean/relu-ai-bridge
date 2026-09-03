@@ -52,29 +52,32 @@ test('approval store fails closed when handed a non-normalized policy', async (t
   }
 });
 
-test('approval store invalidates grants when persisted policy is malformed rather than missing', async (t) => {
+test('approval store invalidates grants when persisted policy is missing or malformed', async (t) => {
   const env = await fixture();
   t.after(() => env.cleanup());
   await fs.mkdir(env.dataDir, { recursive: true });
-  await fs.writeFile(path.join(env.dataDir, 'approvals.json'), JSON.stringify({
-    policy: null,
-    grants: [{
-      id: 'grant_stale',
-      scope: 'file.write:project',
-      mode: 'always',
-      summary: 'must not survive',
-      createdAt: new Date().toISOString(),
-    }],
-    pending: [],
-  }));
+  for (const persistedPolicy of [undefined, null]) {
+    const state = {
+      grants: [{
+        id: 'grant_stale',
+        scope: 'file.write:project',
+        mode: 'always',
+        summary: 'must not survive',
+        createdAt: new Date().toISOString(),
+      }],
+      pending: [],
+    };
+    if (persistedPolicy !== undefined) state.policy = persistedPolicy;
+    await fs.writeFile(path.join(env.dataDir, 'approvals.json'), JSON.stringify(state));
 
-  const store = new ApprovalStore(env.config);
-  await store.initialize();
-  assert.deepEqual(store.list().grants, []);
-  await assert.rejects(
-    () => store.require({ scope: 'file.write:project', summary: 'requires fresh approval' }),
-    ApprovalRequiredError,
-  );
+    const store = new ApprovalStore(env.config);
+    await store.initialize();
+    assert.deepEqual(store.list().grants, []);
+    await assert.rejects(
+      () => store.require({ scope: 'file.write:project', summary: 'requires fresh approval' }),
+      ApprovalRequiredError,
+    );
+  }
 });
 
 test('changing approval policy invalidates old pending requests and persistent grants', async (t) => {

@@ -53,16 +53,11 @@ const ENV_NAME = /^[A-Z_][A-Z0-9_]{0,127}$/u;
 const APPROVAL_POLICIES = new Set(['trusted_always', 'manual']);
 const APPROVAL_CONFIG_KEYS = new Set([
   'policy',
-  'enforceMutatingToolGrants',
   'allowPersistentGrants',
   'preapprovedScopes',
   'pendingTtlMs',
   'maxPending',
 ]);
-// Missing policy is treated as the legacy manual behavior so an upgrade never
-// widens an existing installation. `init` writes the new trusted default
-// explicitly for newly created company-local configurations.
-const LEGACY_APPROVAL_POLICY = 'manual';
 const INITIAL_APPROVAL_POLICY = 'trusted_always';
 const FORBIDDEN_OUTBOUND_HEADERS = new Set([
   'connection', 'content-length', 'cookie', 'host', 'proxy-authorization',
@@ -155,18 +150,11 @@ function normalizeApprovals(value) {
   for (const key of Object.keys(approvals)) {
     if (!APPROVAL_CONFIG_KEYS.has(key)) throw new Error(`approvals.${key} is unsupported`);
   }
-  const legacyEnforcement = approvals.enforceMutatingToolGrants === undefined
-    ? undefined
-    : bool(approvals.enforceMutatingToolGrants, true);
   const policy = approvals.policy === undefined
-    ? (legacyEnforcement === false ? 'trusted_always' : LEGACY_APPROVAL_POLICY)
+    ? INITIAL_APPROVAL_POLICY
     : approvals.policy;
   if (typeof policy !== 'string' || !APPROVAL_POLICIES.has(policy)) {
     throw new Error('approvals.policy must be trusted_always or manual');
-  }
-  if (legacyEnforcement !== undefined
-    && legacyEnforcement !== (policy === 'manual')) {
-    throw new Error('approvals.policy conflicts with deprecated approvals.enforceMutatingToolGrants');
   }
   return { approvals, policy };
 }
@@ -521,7 +509,7 @@ export async function loadConfig(options = {}) {
     }
   }
   if ((perfetto.websocketPath ?? '/perfetto/ws') !== '/perfetto/ws') {
-    throw new Error('perfetto.websocketPath is fixed to /perfetto/ws by the v57 plugin security contract');
+    throw new Error('perfetto.websocketPath is fixed to /perfetto/ws by the v58 plugin security contract');
   }
   const allowedPluginIds = (perfetto.allowedPluginIds ?? ['io.company.RELUPerfettoBridge']).map(String);
   if (allowedPluginIds.length === 0 || allowedPluginIds.some((id) => !/^[a-zA-Z0-9._-]{3,200}$/u.test(id))) {
@@ -611,9 +599,6 @@ export async function loadConfig(options = {}) {
     },
     approvals: {
       policy: approvalPolicy,
-      // Retain the normalized compatibility field for integrations compiled
-      // against 0.4.x. ApprovalStore authorizes from `policy` only.
-      enforceMutatingToolGrants: approvalPolicy === 'manual',
       allowPersistentGrants: bool(approvals.allowPersistentGrants, true),
       preapprovedScopes: Array.isArray(approvals.preapprovedScopes) ? approvals.preapprovedScopes.map(String) : [],
       pendingTtlMs: boundedPositiveInteger(approvals.pendingTtlMs, 10 * 60_000, 60 * 60_000, 'approvals.pendingTtlMs'),

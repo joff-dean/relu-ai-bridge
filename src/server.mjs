@@ -129,7 +129,7 @@ export async function createApplication(options = {}) {
       return sendJson(response, 200, {
         ok: true,
         name: 'relu-ai-bridge',
-        version: '0.5.0',
+        version: '0.6.0',
         auth: config.server.auth,
         mcpAuth: config.server.mcpAuth,
         approvalPolicy: config.approvals.policy,

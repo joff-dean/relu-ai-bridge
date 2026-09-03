@@ -186,7 +186,7 @@ if connector.get("number") != 1 or connector.get("id") != "perfetto":
     raise SystemExit("Connector #1 Perfetto contract 불일치")
 if core.get("path") != "compat/relu-ai-bridge.json":
     raise SystemExit("core compatibility path 불일치")
-if connector.get("manifest_path") != "compat/connectors/perfetto-v57.2.json":
+if connector.get("manifest_path") != "compat/connectors/perfetto-v58.2.json":
     raise SystemExit("Perfetto connector compatibility path 불일치")
 expected_connector = connector_contract["connector"]
 for manifest_key, contract_key in (

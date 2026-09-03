@@ -99,7 +99,7 @@ test('config loads a strict service registry with separate connector credential'
   assert.equal(redacted.includes('perfetto_connector_token'), false);
 });
 
-test('approval policy keeps manual mode and rejects ambiguous or unknown configuration', async (t) => {
+test('approval policy defaults to trusted mode and rejects legacy or unknown configuration', async (t) => {
   const env = await fixture();
   t.after(() => env.cleanup());
   const { raw, file } = await configFiles(env);
@@ -109,19 +109,14 @@ test('approval policy keeps manual mode and rejects ambiguous or unknown configu
   assert.equal((await loadConfig({ configPath: file, environment })).approvals.policy, 'manual');
 
   delete raw.approvals.policy;
-  delete raw.approvals.enforceMutatingToolGrants;
-  await fs.writeFile(file, JSON.stringify(raw));
-  assert.equal((await loadConfig({ configPath: file, environment })).approvals.policy, 'manual');
-
-  raw.approvals.enforceMutatingToolGrants = false;
   await fs.writeFile(file, JSON.stringify(raw));
   assert.equal((await loadConfig({ configPath: file, environment })).approvals.policy, 'trusted_always');
 
-  raw.approvals.policy = 'manual';
+  raw.approvals.enforceMutatingToolGrants = false;
   await fs.writeFile(file, JSON.stringify(raw));
   await assert.rejects(
     () => loadConfig({ configPath: file, environment }),
-    /conflicts with deprecated/u,
+    /approvals\.enforceMutatingToolGrants is unsupported/u,
   );
 
   delete raw.approvals.enforceMutatingToolGrants;

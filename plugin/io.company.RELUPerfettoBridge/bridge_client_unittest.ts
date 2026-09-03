@@ -1,6 +1,6 @@
 // Copyright (c) 2026. All rights reserved.
 
-import type {PerfettoV57Adapter} from '../../perfetto_adapter/v57';
+import type {PerfettoV58Adapter} from '../../perfetto_adapter/v58';
 import {
   perfettoClientProofTranscript,
   perfettoServerProofTranscript,
@@ -385,7 +385,7 @@ function createClient(
 
 function createAdapter(
   overrides: Record<string, unknown> = {},
-): PerfettoV57Adapter {
+): PerfettoV58Adapter {
   return {
     getTraceInfo: () => ({
       traceId: 'trace-1',
@@ -403,5 +403,5 @@ function createAdapter(
       trackUris: [],
     }),
     ...overrides,
-  } as unknown as PerfettoV57Adapter;
+  } as unknown as PerfettoV58Adapter;
 }

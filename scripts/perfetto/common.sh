@@ -13,7 +13,7 @@ export GIT_NO_REPLACE_OBJECTS=1
 PERFETTO_SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 PERFETTO_PROJECT_ROOT=$(CDPATH= cd -- "$PERFETTO_SCRIPT_DIR/../.." && pwd -P)
 RELU_COMPAT_FILE="$PERFETTO_PROJECT_ROOT/compat/relu-ai-bridge.json"
-PERFETTO_COMPAT_FILE="$PERFETTO_PROJECT_ROOT/compat/connectors/perfetto-v57.2.json"
+PERFETTO_COMPAT_FILE="$PERFETTO_PROJECT_ROOT/compat/connectors/perfetto-v58.2.json"
 
 die() {
   printf '오류: %s\n' "$*" >&2
@@ -26,6 +26,48 @@ info() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "필수 명령을 찾을 수 없습니다: $1"
+}
+
+assert_python_310() {
+  local python_command
+  local python_path
+  local python_version
+  python_command=${EMSDK_PYTHON:-python3}
+  python_path=$(command -v "$python_command" 2>/dev/null || true)
+  [ -n "$python_path" ] && [ -x "$python_path" ] || \
+    die "Perfetto Python 실행 파일을 찾을 수 없습니다: $python_command"
+  python_version=$("$python_path" -c 'import sys; print(".".join(map(str, sys.version_info[:3])))') || \
+    die "Python 버전을 확인할 수 없습니다"
+  if ! "$python_path" - <<'PY'
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
+PY
+  then
+    die "Perfetto v58.2에는 Python 3.10 이상이 필요합니다 (현재 $python_version)"
+  fi
+  export EMSDK_PYTHON="$python_path"
+  export PATH="$(dirname -- "$python_path"):$PATH"
+}
+
+assert_perfetto_build_host() {
+  local java_major
+  local java_properties
+  assert_python_310
+  if [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ]; then
+    if /usr/bin/arch -x86_64 /usr/bin/true >/dev/null 2>&1; then
+      return
+    fi
+    if command -v java >/dev/null 2>&1; then
+      java_properties=$(java -XshowSettings:properties -version 2>&1 || true)
+      java_major=$(printf '%s\n' "$java_properties" | awk -F'= ' \
+        '/^[[:space:]]*java.version = / {split($2, part, "."); print (part[1] == "1" ? part[2] : part[1]); exit}')
+      case "$java_major" in
+        ''|*[!0-9]*) ;;
+        *) [ "$java_major" -ge 11 ] && return ;;
+      esac
+    fi
+    die "macOS ARM64 Perfetto build에는 Rosetta 2 또는 Java 11 이상 runtime이 필요합니다"
+  fi
 }
 
 compat_value() {
@@ -82,7 +124,7 @@ perfetto = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
 if relu.get("product") != {
     "id": "relu-ai-bridge",
     "name": "RELU AI Bridge",
-    "core_version": "0.5.0",
+    "core_version": "0.6.0",
     "scope": "company-internal-local-capability-ai-bridge",
 }:
     raise SystemExit("RELU AI Bridge core compatibility contract 불일치")
@@ -105,7 +147,7 @@ for core_key, connector_key in (
 ):
     if entry.get(core_key) != contract.get(connector_key):
         raise SystemExit(f"core/connector compatibility 불일치: {core_key}")
-if entry.get("manifest") != "connectors/perfetto-v57.2.json":
+if entry.get("manifest") != "connectors/perfetto-v58.2.json":
     raise SystemExit("Perfetto connector manifest 경로 불일치")
 core_version = relu["product"]["core_version"]
 if contract.get("version") != core_version:
@@ -114,14 +156,14 @@ if core_version not in contract.get("compatible_relu_core_versions", []):
     raise SystemExit("Perfetto connector가 RELU core version을 지원하지 않습니다")
 expected_baseline = {
     "repository": "https://github.com/google/perfetto.git",
-    "release": "v57.2",
-    "tag_ref": "refs/tags/v57.2",
-    "tag_object_sha": "24bdfb9dfa2dc92883761426dd94259756fa197e",
-    "commit_sha": "da1d152cff27890903d158fe96751de3aab883cc",
-    "short_commit": "da1d152",
+    "release": "v58.2",
+    "tag_ref": "refs/tags/v58.2",
+    "tag_object_sha": "9e9bdafee101a7bb2eac57f60d14c5ec1fa30989",
+    "commit_sha": "add693d8b338ba9599dbcbc3e300b1ab8c000897",
+    "short_commit": "add693d8",
 }
 if perfetto.get("public_baseline") != expected_baseline:
-    raise SystemExit("공식 Perfetto v57.2 exact baseline contract 불일치")
+    raise SystemExit("공식 Perfetto v58.2 exact baseline contract 불일치")
 expected_integration = {
     "plugin_id": "io.company.RELUPerfettoBridge",
     "source_plugin_path": "plugin/io.company.RELUPerfettoBridge",
@@ -129,7 +171,7 @@ expected_integration = {
     "target_plugin_path": "ui/src/plugins/io.company.RELUPerfettoBridge",
     "target_adapter_path": "ui/src/perfetto_adapter",
     "default_plugins_file": "ui/src/core/embedder/default_plugins.ts",
-    "enable_patch": "integration/patches/perfetto-v57.2-enable-default-plugin.patch",
+    "enable_patch": "integration/patches/perfetto-v58.2-enable-default-plugin.patch",
 }
 if perfetto.get("integration") != expected_integration:
     raise SystemExit("Perfetto Connector #1 overlay contract 불일치")
@@ -350,7 +392,7 @@ assert_source_layout() {
   adapter_path="$PERFETTO_PROJECT_ROOT/$(compat_value integration.source_adapter_path)"
   [ -f "$plugin_path/index.ts" ] || die "플러그인 index.ts가 없습니다: $plugin_path"
   [ -f "$adapter_path/protocol.ts" ] || die "adapter protocol.ts가 없습니다: $adapter_path"
-  [ -d "$adapter_path/v57" ] || die "v57 adapter가 없습니다: $adapter_path/v57"
+  [ -d "$adapter_path/v58" ] || die "v58 adapter가 없습니다: $adapter_path/v58"
   source_symlink=$(find "$plugin_path" "$adapter_path" -type l -print -quit)
   [ -z "$source_symlink" ] || die "plugin/adapter source에 symlink를 허용하지 않습니다: $source_symlink"
 }

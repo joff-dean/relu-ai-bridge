@@ -9,14 +9,14 @@ import {
   DEFAULT_PERFETTO_BRIDGE_URL,
   type TraceRole,
 } from '../../perfetto_adapter/protocol';
-import {PerfettoV57Adapter} from '../../perfetto_adapter/v57';
+import {PerfettoV58Adapter} from '../../perfetto_adapter/v58';
 import {
   PerfettoBridgeClient,
   type BridgeConnectionStatus,
 } from './bridge_client';
 
 const PLUGIN_ID = 'io.company.RELUPerfettoBridge';
-const PLUGIN_VERSION = '0.5.0';
+const PLUGIN_VERSION = '0.6.0';
 const COMMAND_SOURCE = 'RELU AI Bridge · Perfetto';
 
 export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
@@ -29,7 +29,7 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
   private static bridgeToken = '';
 
   private trace?: Trace;
-  private adapter?: PerfettoV57Adapter;
+  private adapter?: PerfettoV58Adapter;
   private bridge?: PerfettoBridgeClient;
   private traceInstanceClientId?: string;
   private status: BridgeConnectionStatus = {
@@ -59,7 +59,7 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
   async onTraceLoad(trace: Trace): Promise<void> {
     this.trace = trace;
     this.traceInstanceClientId = newClientId();
-    this.adapter = new PerfettoV57Adapter(trace);
+    this.adapter = new PerfettoV58Adapter(trace);
     this.registerCommands(trace);
     this.registerStatusItem(trace);
 

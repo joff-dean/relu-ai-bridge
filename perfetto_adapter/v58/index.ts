@@ -7,7 +7,7 @@ export {
   MAX_QUERY_ROWS,
   MAX_QUERY_SQL_BYTES,
   PERFETTO_ADAPTER_VERSION,
-  PerfettoV57Adapter,
+  PerfettoV58Adapter,
   serializeQueryResult,
   serializeSqlValue,
 } from './adapter';

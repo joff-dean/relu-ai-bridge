@@ -63,13 +63,12 @@ export class ApprovalStore {
   async initialize() {
     return this.mutex.runExclusive(async () => {
       const loaded = await readJson(this.file, this.state);
-      // 0.4.x state had no policy field and therefore represents manual mode.
-      // A policy transition invalidates old decisions so switching back cannot
-      // silently reactivate a grant from a different authorization regime.
+      // Only state written under the exact active policy is reusable. Missing,
+      // malformed, or different policy metadata invalidates prior decisions.
       const loadedPolicy = loaded && typeof loaded === 'object'
         && Object.prototype.hasOwnProperty.call(loaded, 'policy')
         ? loaded.policy
-        : 'manual';
+        : undefined;
       const samePolicy = loadedPolicy === this.policy;
       const draft = {
         policy: this.policy,

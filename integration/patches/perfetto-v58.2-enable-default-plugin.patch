@@ -1,12 +1,12 @@
 diff --git a/ui/src/core/embedder/default_plugins.ts b/ui/src/core/embedder/default_plugins.ts
-index 46bb22e..0306dfa 100644
+index 0008eac..41a1862 100644
 --- a/ui/src/core/embedder/default_plugins.ts
 +++ b/ui/src/core/embedder/default_plugins.ts
-@@ -98,6 +98,7 @@ export const defaultPlugins = [
-   'dev.perfetto.TraceProcessorTrack',
+@@ -103,6 +103,7 @@ export const defaultPlugins = [
    'dev.perfetto.TrackEvent',
    'dev.perfetto.TrackUtils',
+   'dev.perfetto.VideoFrames',
 +  'io.company.RELUPerfettoBridge',
    'org.Chromium.OpenTableCommands',
+   'org.chromium.MemorySnapshots',
    'org.kernel.LinuxKernelSubsystems',
-   'org.kernel.SuspendResumeLatency',

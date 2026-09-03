@@ -13,9 +13,9 @@ usage() {
 
 COMPANY_ADAPTER_DIR은 반드시 이 외부 프로젝트 checkout 밖에 있어야 하며,
 다음 COMPANY_ADAPTER.json을 포함해야 한다.
-  {"schema_version":1,"company_perfetto_commit":"40자리 SHA","base_adapter":"v57"}
+  {"schema_version":1,"company_perfetto_commit":"40자리 SHA","base_adapter":"v58"}
 
-기본 v57 adapter를 .git/relu-ai-bridge-backups에 백업한 뒤 내부 adapter로 교체한다.
+기본 v58 adapter를 .git/relu-ai-bridge-backups에 백업한 뒤 내부 adapter로 교체한다.
 EOF
 }
 
@@ -37,7 +37,7 @@ assert_git_worktree_root "$company_perfetto"
 assert_git_metadata_outside_project_root "$company_perfetto"
 assert_exact_head "$company_perfetto" "$expected_head"
 [ -f "$company_adapter/COMPANY_ADAPTER.json" ] || die "COMPANY_ADAPTER.json이 없습니다"
-[ -f "$company_adapter/index.ts" ] || die "company adapter는 완전한 v57 교체본이며 index.ts가 필요합니다"
+[ -f "$company_adapter/index.ts" ] || die "company adapter는 완전한 v58 교체본이며 index.ts가 필요합니다"
 company_symlink=$(find "$company_adapter" -type l -print -quit)
 [ -z "$company_symlink" ] || die "company adapter source에 symlink를 허용하지 않습니다: $company_symlink"
 company_forbidden=$(find "$company_adapter" \( \
@@ -55,7 +55,7 @@ import re
 import sys
 
 data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-if data.get("schema_version") != 1 or data.get("base_adapter") != "v57":
+if data.get("schema_version") != 1 or data.get("base_adapter") != "v58":
     raise SystemExit("company adapter manifest contract 불일치")
 commit = data.get("company_perfetto_commit", "")
 if not re.fullmatch(r"[0-9a-f]{40}", commit):
@@ -69,10 +69,10 @@ plugin_rel=$(compat_value integration.target_plugin_path)
 adapter_rel=$(compat_value integration.target_adapter_path)
 plugin_target="$company_perfetto/$plugin_rel"
 adapter_root="$company_perfetto/$adapter_rel"
-adapter_target="$adapter_root/v57"
+adapter_target="$adapter_root/v58"
 [ -f "$plugin_target/.relu-ai-bridge-managed" ] || die "generic plugin 통합을 먼저 실행하십시오"
 [ -f "$adapter_root/.relu-ai-bridge-managed" ] || die "generic adapter 통합을 먼저 실행하십시오"
-[ -d "$adapter_target" ] || die "generic v57 adapter 통합을 먼저 실행하십시오"
+[ -d "$adapter_target" ] || die "generic v58 adapter 통합을 먼저 실행하십시오"
 assert_no_symlink_components "$plugin_target" "$company_perfetto"
 assert_no_symlink_components "$adapter_target" "$company_perfetto"
 
@@ -124,7 +124,7 @@ fi
 
 backup_root="$(absolute_git_dir "$company_perfetto")/relu-ai-bridge-backups"
 mkdir -p -- "$backup_root"
-backup_dir=$(mktemp -d "$backup_root/adapter-v57.XXXXXX")
+backup_dir=$(mktemp -d "$backup_root/adapter-v58.XXXXXX")
 backup_path="$backup_dir/previous"
 transaction_active=1
 mv -- "$adapter_target" "$backup_path"

@@ -7,7 +7,7 @@ reflection, shell 또는 URL proxy를 제공하지 않는다.
 사내 검증 NuGet source에서 release와 같은 버전을 고정한다.
 
 ```powershell
-dotnet add package Relu.AI.Bridge.DesktopConnector --version 0.5.0 `
+dotnet add package Relu.AI.Bridge.DesktopConnector --version 0.6.0 `
   --source $env:RELU_NUGET_SOURCE
 ```
 
@@ -29,6 +29,6 @@ callback 안에서 갱신한다. Handler는 전달된 `ContextSnapshot`만 분�
 
 전체 예제와 운영 경계:
 
-- [SDK source와 API 설명](https://github.com/joff-dean/relu-ai-bridge/blob/relu-ai-bridge-v0.5.0/sdk-dotnet/README_KO.md)
-- [WPF Android Log Viewer 예제](https://github.com/joff-dean/relu-ai-bridge/blob/relu-ai-bridge-v0.5.0/examples/wpf-android-log-viewer/README_KO.md)
-- [Desktop Connector 보안 설계](https://github.com/joff-dean/relu-ai-bridge/blob/relu-ai-bridge-v0.5.0/docs/DESKTOP_CONNECTOR_KO.md)
+- [SDK source와 API 설명](https://github.com/joff-dean/relu-ai-bridge/blob/relu-ai-bridge-v0.6.0/sdk-dotnet/README_KO.md)
+- [WPF Android Log Viewer 예제](https://github.com/joff-dean/relu-ai-bridge/blob/relu-ai-bridge-v0.6.0/examples/wpf-android-log-viewer/README_KO.md)
+- [Desktop Connector 보안 설계](https://github.com/joff-dean/relu-ai-bridge/blob/relu-ai-bridge-v0.6.0/docs/DESKTOP_CONNECTOR_KO.md)

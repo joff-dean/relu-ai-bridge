@@ -20,7 +20,7 @@ public sealed class ReluDesktopConnectorOptions
     /// <summary>설치별로 안정적이지만 토큰이나 사용자명을 포함하지 않는 opaque ID입니다.</summary>
     public required string InstanceId { get; init; }
 
-    public string ConnectorVersion { get; init; } = "0.5.0";
+    public string ConnectorVersion { get; init; } = "0.6.0";
 
     public required IReluConnectorSecretProvider SecretProvider { get; init; }
 

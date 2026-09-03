@@ -9,7 +9,7 @@ usage() {
   cat <<'EOF'
 사용법: scripts/perfetto/diagnose-company.sh COMPANY_PERFETTO_DIR [OUTPUT_FILE]
 
-회사 Perfetto HEAD와 공개 v57.2 기준선의 ancestry 및 통합 영향 파일을 진단한다.
+회사 Perfetto HEAD와 공개 v58.2 기준선의 ancestry 및 통합 영향 파일을 진단한다.
 기준 commit 객체가 사내 저장소에 미리 존재해야 하며 네트워크 fetch는 하지 않는다.
 OUTPUT_FILE을 생략하면 stdout으로만 출력한다.
 EOF
@@ -30,7 +30,7 @@ fi
 baseline=$(compat_value public_baseline.commit_sha)
 company_head=$(git -C "$company_dir" rev-parse HEAD)
 git -C "$company_dir" cat-file -e "$baseline^{commit}" 2>/dev/null || \
-  die "공개 기준 commit 객체가 없습니다. 검증된 upstream v57.2 bundle을 사내로 먼저 반입하십시오: $baseline"
+  die "공개 기준 commit 객체가 없습니다. 검증된 upstream v58.2 bundle을 사내로 먼저 반입하십시오: $baseline"
 
 set +e
 git -C "$company_dir" merge-base --is-ancestor "$baseline" "$company_head"
@@ -68,7 +68,7 @@ trap cleanup EXIT INT TERM
     ui/src/public \
     ui/src/core/embedder/default_plugins.ts \
     ui/src/core/plugin_manager.ts \
-    ui/src/virtual/plugins.d.ts \
+    ui/src/frontend/plugins.ts \
     ui/vite.config.mjs \
     ui/build.mjs || true
   printf '\n[전체 변경 통계]\n'

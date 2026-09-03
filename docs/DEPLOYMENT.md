@@ -7,7 +7,7 @@
 3. **.NET Desktop Connector SDK**: Windows 분석 프로그램에 포함하는 net8.0 library
 4. **Analysis Skill suite**: Claude/Codex에 복사하는 checksum inventory와 Markdown
 5. **Service registry**: 내부 Origin/app ID/schema/endpoint/env 이름을 포함한 company-only config
-6. **Perfetto Connector #1 overlay**: plugin과 `PerfettoAdapterV57`을 포함해 빌드한 UI
+6. **Perfetto Connector #1 overlay**: plugin과 `PerfettoV58Adapter`를 포함해 빌드한 UI
 
 외부 release에는 회사 hostname, credential과 company fork diff를 넣지 않는다. Immutable internal mirror에 반입한 뒤 integration repo가 service registry와 overlay를 결합한다.
 
@@ -33,7 +33,7 @@ RELU는 사용자 PC의 low-privilege account로 실행한다. 중앙 공용 REL
 
 - Platform/security: base config, `approvals.policy`, service Origin/token audience, Capability/effect/schema, egress endpoint, OS sandbox
 - Service owner: bounded handler/API, output schema, service/API secret, rollout/rollback
-- Perfetto owner: v57 adapter, feature SQL, alignment acceptance
+- Perfetto owner: v58 adapter, feature SQL, alignment acceptance
 - End user: `manual`을 사용하는 경우 once/session/always grant와 revoke
 - AI governance: Claude/workspace와 데이터 등급 허용 범위
 
@@ -124,7 +124,7 @@ dotnet build C:\Company\relu-ai-bridge\examples\wpf-android-log-viewer\WpfAndroi
   -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
 dotnet pack C:\Company\relu-ai-bridge\sdk-dotnet\src\Relu.AI.Bridge.DesktopConnector\Relu.AI.Bridge.DesktopConnector.csproj -c Release --no-build --output C:\Company\release-out\nuget `
   -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false `
-  -p:Version=0.5.0 -p:PackageVersion=0.5.0
+  -p:Version=0.6.0 -p:PackageVersion=0.6.0
 powershell.exe -NoProfile -File C:\Company\relu-ai-bridge\scripts\skills\install-skills.ps1 `
   -Scope project -Target both -ProjectPath C:\Work\AndroidAnalysis
 powershell.exe -NoProfile -File C:\Company\relu-ai-bridge\scripts\skills\verify-skills.ps1 `
@@ -224,11 +224,17 @@ Command의 `cwd`는 sandbox가 아니므로 mutable repository script를 실행�
 
 ## Perfetto UI 배포
 
+Perfetto v58.2 UI 도구 체인은 Python 3.10 이상을 요구한다. build worker에서
+`python3 --version`을 확인하고, 여러 Python이 설치된 장비에서는 승인된 3.10 이상
+실행 파일이 `PATH`의 `python3`으로 선택되게 하거나 정확한 경로를 `EMSDK_PYTHON`에
+지정한다. macOS ARM64 worker는 Rosetta 2 또는 `java -version`이 성공하는 호환 Java
+11 이상 runtime도 필요하다. 스크립트는 이 조건을 긴 build 전에 검사한다.
+
 ```bash
-scripts/perfetto/bootstrap.sh /absolute/work/perfetto-v57.2
-scripts/perfetto/integrate.sh --mode copy /absolute/work/perfetto-v57.2
-scripts/perfetto/verify-integration.sh /absolute/work/perfetto-v57.2
-scripts/perfetto/build-test.sh --all-tests /absolute/work/perfetto-v57.2
+scripts/perfetto/bootstrap.sh /absolute/work/perfetto-v58.2
+scripts/perfetto/integrate.sh --mode copy /absolute/work/perfetto-v58.2
+scripts/perfetto/verify-integration.sh /absolute/work/perfetto-v58.2
+scripts/perfetto/build-test.sh --all-tests /absolute/work/perfetto-v58.2
 ```
 
 사내 origin은 `perfetto.allowedOrigins`에 exact origin으로 추가한다. Wildcard/path는 허용하지 않는다. Production build hash, RELU tag, connector compatibility manifest와 company Perfetto full SHA를 함께 기록한다.
@@ -245,14 +251,14 @@ scripts/perfetto/build-test.sh --all-tests /absolute/work/perfetto-v57.2
 7. Service별 bounded load/timeout/cancellation test
 8. 기본 `trusted_always`의 무프롬프트 실행·grant 미생성, `manual`의
    once/session/always/deny/revoke와 browser reload/desktop restart isolation test
-9. Exact Perfetto v57.2 overlay unit/type/build test
+9. Exact Perfetto v58.2 overlay unit/type/build test
 10. Internal manifest에 core/connector/company target full SHA, approval policy와 config digest 기록
 11. Read-only canary 후 production 확대
 
 ## Rollback
 
 - Core: 직전 검증된 RELU tag artifact로 되돌리고 process 재시작
-- Approval policy: artifact와 함께 검증된 정책으로 되돌린다. 0.4.x 동작을 유지하려면
+- Approval policy: artifact와 함께 검증된 정책으로 되돌린다. 대화형 통제가 필요하면
   `manual`을 명시하며, 정책 전환으로 무효화된 이전 grant가 복구된다고 가정하지 않는다.
 - Connector: service build와 registry entry를 함께 직전 버전으로 복구
 - Credential: 의심 service token/API secret만 즉시 회전; control 침해면 수동 grant도 제거하고 trusted policy 장비를 중지

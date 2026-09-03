@@ -4,7 +4,7 @@ import { ReluWebConnector } from '../../sdk/relu-web-connector.js';
 export function installBatteryViewerConnector({ token, viewer }) {
   const connector = new ReluWebConnector({
     serviceId: 'battery-viewer',
-    connectorVersion: '0.5.0',
+    connectorVersion: '0.6.0',
     token,
     getContext: () => {
       const selection = viewer.getSelection();

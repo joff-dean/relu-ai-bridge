@@ -23,7 +23,7 @@ plugin_id=$(compat_value integration.plugin_id)
 
 [ -f "$perfetto_dir/$plugin_rel/index.ts" ] || die "통합 plugin index.ts가 없습니다"
 [ -f "$perfetto_dir/$adapter_rel/protocol.ts" ] || die "통합 adapter protocol.ts가 없습니다"
-[ -d "$perfetto_dir/$adapter_rel/v57" ] || die "통합 v57 adapter가 없습니다"
+[ -d "$perfetto_dir/$adapter_rel/v58" ] || die "통합 v58 adapter가 없습니다"
 [ -f "$perfetto_dir/$plugin_rel/.relu-ai-bridge-managed" ] || die "overlay 관리 표식이 없습니다"
 [ -f "$perfetto_dir/$adapter_rel/.relu-ai-bridge-managed" ] || die "adapter overlay 관리 표식이 없습니다"
 [ -f "$perfetto_dir/$default_plugins_rel" ] || die "default_plugins.ts가 없습니다"
@@ -42,4 +42,4 @@ grep -Eq 'static readonly id = (PLUGIN_ID|.io\.company\.RELUPerfettoBridge.);' \
 
 info "통합 구조 검증 통과"
 info "plugin: $plugin_rel"
-info "adapter: $adapter_rel (contract v57)"
+info "adapter: $adapter_rel (contract v58)"

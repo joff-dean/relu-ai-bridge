@@ -8,12 +8,12 @@ import type {
   SqlValue,
 } from '../../trace_processor/query_result';
 import {
-  PerfettoV57Adapter,
+  PerfettoV58Adapter,
   serializeQueryResult,
   serializeSqlValue,
 } from './adapter';
 
-describe('PerfettoV57Adapter', () => {
+describe('PerfettoV58Adapter', () => {
   test('현재 area selection을 정밀도 손실 없는 문자열로 반환한다', () => {
     const trace = createTrace({
       selection: {
@@ -24,7 +24,7 @@ describe('PerfettoV57Adapter', () => {
         tracks: [],
       },
     });
-    const adapter = new PerfettoV57Adapter(trace);
+    const adapter = new PerfettoV58Adapter(trace);
 
     expect(adapter.getAreaSelection()).toEqual({
       startNs: '9007199254740993',
@@ -36,7 +36,7 @@ describe('PerfettoV57Adapter', () => {
   test('mapped area를 검증하고 Perfetto selection API에 전달한다', () => {
     const selectArea = vi.fn();
     const trace = createTrace({selectArea});
-    const adapter = new PerfettoV57Adapter(trace);
+    const adapter = new PerfettoV58Adapter(trace);
 
     adapter.selectMappedArea({
       startNs: '10',
@@ -60,7 +60,7 @@ describe('PerfettoV57Adapter', () => {
   });
 
   test('trace 범위를 벗어난 mapped area를 거부한다', () => {
-    const adapter = new PerfettoV57Adapter(createTrace({}));
+    const adapter = new PerfettoV58Adapter(createTrace({}));
     expect(() =>
       adapter.selectMappedArea({
         startNs: '-1',

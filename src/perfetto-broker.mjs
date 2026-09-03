@@ -596,7 +596,7 @@ export class PerfettoBroker {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        // Perfetto v57.2 exposes no supported query cancellation API. Keep this
+        // Perfetto v58.2 exposes no supported query cancellation API. Keep this
         // client query-locked until its late response arrives or it reconnects.
         reject(new Error(`Perfetto request timed out after ${timeoutMs}ms`));
       }, timeoutMs);

@@ -12,14 +12,14 @@ import type {
 } from '../protocol';
 import {PERFETTO_BOUNDED_READ_MARKER} from '../protocol';
 
-export const PERFETTO_ADAPTER_VERSION = 'v57' as const;
+export const PERFETTO_ADAPTER_VERSION = 'v58' as const;
 export const MAX_QUERY_SQL_BYTES = 64 * 1024;
 export const DEFAULT_MAX_QUERY_ROWS = 1_000;
 export const MAX_QUERY_ROWS = 5_000;
 export const MAX_QUERY_CELL_BYTES = 384 * 1024;
 export const MAX_QUERY_RESULT_BYTES = 1_000_000;
 
-export class PerfettoV57Adapter {
+export class PerfettoV58Adapter {
   constructor(private readonly trace: Trace) {}
 
   getTraceInfo(): TraceDescriptor {

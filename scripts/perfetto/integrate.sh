@@ -170,7 +170,7 @@ if [ "$literal_count" -eq 0 ]; then
   if git -C "$perfetto_dir" apply --check "$enable_patch" >/dev/null 2>&1; then
     enable_method=patch
   elif [ "$target_kind" = company ] && [ "$allow_anchor_fallback" -eq 1 ]; then
-    anchor_count=$(grep -Fxc "  'dev.perfetto.TrackUtils'," "$default_plugins_file" || true)
+    anchor_count=$(grep -Fxc "  'dev.perfetto.VideoFrames'," "$default_plugins_file" || true)
     [ "$anchor_count" -eq 1 ] || die "안전한 defaultPlugins anchor가 정확히 하나가 아닙니다"
     enable_method=anchor
   else
@@ -302,7 +302,7 @@ fi
 case "$enable_method" in
   patch)
     git -C "$perfetto_dir" apply "$enable_patch"
-    info "v57.2 기본 활성화 patch를 적용했습니다"
+    info "v58.2 기본 활성화 patch를 적용했습니다"
     ;;
   anchor)
     python3 - "$default_plugins_file" "$plugin_literal" <<'PY'
@@ -314,7 +314,7 @@ import tempfile
 
 path = Path(sys.argv[1])
 literal = sys.argv[2]
-anchor = "  'dev.perfetto.TrackUtils',"
+anchor = "  'dev.perfetto.VideoFrames',"
 text = path.read_text(encoding="utf-8")
 if text.count(anchor) != 1:
     raise SystemExit("안전한 anchor가 정확히 하나가 아니므로 중단합니다")

@@ -5,8 +5,8 @@ Connector #1이다. 이 문서는 외부에서 검증한 RELU core release를 �
 반입하고, Connector #1을 사내 전용 label과 exact SHA로 식별한 회사 Perfetto에
 통합하는 절차다.
 회사 fork와 company-only adapter의 정확한 정보는 외부 release와 분리한다.
-현재 RELU core와 Perfetto connector release version은 각각 `0.5.0`이며,
-Perfetto public baseline `v57.2`와 adapter contract `v57`은 독립 호환성 축이다.
+현재 RELU core와 Perfetto connector release version은 각각 `0.6.0`이며,
+Perfetto public baseline `v58.2`와 adapter contract `v58`은 독립 호환성 축이다.
 
 ```text
 외부 RELU core + connector별 public contract
@@ -45,15 +45,13 @@ Perfetto public baseline `v57.2`와 adapter contract `v57`은 독립 호환성 �
 9. company 대상 overlay는 clean RELU release checkout에서 `copy`만 허용한다.
    symlink와 `--allow-dirty-source`는 도구가 거부한다.
 
-### 0.5 승인 정책 마이그레이션
+### 승인 정책
 
 새 `init` 설정은 사내 단일 사용자 장비의 반복 승인 창을 없애기 위해
-`approvals.policy:"trusted_always"`를 명시한다. 0.4.x 설정에서 `policy`와 deprecated
-`enforceMutatingToolGrants`가 모두 없거나 legacy 값이 `true`이면 0.5에서도 `manual`로
-유지해 업데이트 자체가 권한을 확대하지 않는다. legacy 값이 `false`이면 이전의
-무프롬프트 동작을 보존해 `trusted_always`로 해석한다. 기존 장비는 보안 담당자가
-permission, root, command profile, service/Capability registry와 egress를 검토한 뒤
-legacy 키를 제거하고 원하는 `policy`를 명시한다.
+`approvals.policy:"trusted_always"`를 명시한다. `policy`를 생략해도 같은 값이
+적용된다. 대화형 통제가 필요한 장비만 `manual`을 명시한다. 보안 담당자는
+permission, root, command profile, service/Capability registry와 egress를 함께
+검토하며, 폐기됐거나 알 수 없는 승인 설정은 startup 오류로 처리한다.
 
 정책 전환은 Bridge 재시작 때 적용되며 이전 pending/grant를 무효화한다. 자동
 정책은 개별 grant를 만들지 않지만 `once/deny` 전용 ambiguous-operation 판정은 계속
@@ -65,7 +63,7 @@ Bridge/Connector 중지, 관련 permission/service 비활성화와 credential �
 
 ```text
 /opt/import-tools/relu-ai-bridge       # 보안 검토한 import tool, read-only
-/quarantine/relu-ai-bridge-v0.5.0     # inbound release, 실행 금지
+/quarantine/relu-ai-bridge-v0.6.0     # inbound release, 실행 금지
 /srv/git/vendor/relu-ai-bridge.git     # bare immutable mirror
 /srv/git/vendor/perfetto-public.git    # 선택: Google baseline bare mirror
 /work/vendor-relu-ai-bridge            # detached vendor checkout
@@ -103,7 +101,7 @@ trace test ID와 사내 CI 결과를 둔다. 외부 write remote를 등록하지
 ```bash
 cd /opt/import-tools/relu-ai-bridge
 scripts/perfetto/verify-release.sh \
-  /quarantine/relu-ai-bridge-v0.5.0
+  /quarantine/relu-ai-bridge-v0.6.0
 ```
 
 signed tag 정책이면 검역 계정 trust store에 승인 public key만 설치하고
@@ -136,7 +134,7 @@ git init --bare /srv/git/vendor/relu-ai-bridge.git
 
 ```bash
 scripts/perfetto/import-release.sh \
-  /quarantine/relu-ai-bridge-v0.5.0 \
+  /quarantine/relu-ai-bridge-v0.6.0 \
   /srv/git/vendor/relu-ai-bridge.git
 ```
 
@@ -150,8 +148,8 @@ scripts/perfetto/import-release.sh \
    `git update-ref --stdin` transaction으로 commit한다.
 
 ```text
-refs/tags/relu-ai-bridge-v0.5.0
-refs/releases/relu-ai-bridge/relu-ai-bridge-v0.5.0
+refs/tags/relu-ai-bridge-v0.6.0
+refs/releases/relu-ai-bridge/relu-ai-bridge-v0.6.0
 ```
 
 기존 tag는 같은 commit을 가리키는지만 보지 않는다. annotated tag type과 raw
@@ -165,8 +163,8 @@ tag object SHA까지 정확히 같아야 idempotent로 인정한다. lightweight
 git -C /srv/git/vendor/relu-ai-bridge.git remote add internal \
   ssh://git.internal.example/vendor/relu-ai-bridge.git
 git -C /srv/git/vendor/relu-ai-bridge.git ls-remote internal \
-  refs/tags/relu-ai-bridge-v0.5.0 \
-  refs/releases/relu-ai-bridge/relu-ai-bridge-v0.5.0
+  refs/tags/relu-ai-bridge-v0.6.0 \
+  refs/releases/relu-ai-bridge/relu-ai-bridge-v0.6.0
 ```
 
 새 release라면 두 ref가 없어야 한다. 서버가 atomic push와 protected tag를
@@ -174,8 +172,8 @@ git -C /srv/git/vendor/relu-ai-bridge.git ls-remote internal \
 
 ```bash
 git -C /srv/git/vendor/relu-ai-bridge.git push --atomic internal \
-  refs/tags/relu-ai-bridge-v0.5.0:refs/tags/relu-ai-bridge-v0.5.0 \
-  refs/releases/relu-ai-bridge/relu-ai-bridge-v0.5.0:refs/releases/relu-ai-bridge/relu-ai-bridge-v0.5.0
+  refs/tags/relu-ai-bridge-v0.6.0:refs/tags/relu-ai-bridge-v0.6.0 \
+  refs/releases/relu-ai-bridge/relu-ai-bridge-v0.6.0:refs/releases/relu-ai-bridge/relu-ai-bridge-v0.6.0
 ```
 
 atomic push가 지원되지 않으면 개별 push로 우회하지 않는다. 문서의 host는
@@ -186,7 +184,7 @@ atomic push가 지원되지 않으면 개별 push로 우회하지 않는다. 문
 ```bash
 git clone /srv/git/vendor/relu-ai-bridge.git /work/vendor-relu-ai-bridge
 git -C /work/vendor-relu-ai-bridge checkout --detach \
-  relu-ai-bridge-v0.5.0
+  relu-ai-bridge-v0.6.0
 git -C /work/vendor-relu-ai-bridge rev-parse HEAD
 git -C /work/vendor-relu-ai-bridge status --short
 ```
@@ -199,7 +197,7 @@ HEAD는 release manifest의 `release.commit`과 같고 status는 비어 있어�
 ### SDK와 Skill 사내 배포
 
 같은 detached release의 `sdk/`를 별도 artifact로 취급한다. 내부 packaging
-저장소에서 회사 scope와 registry metadata를 적용하고 core version과 같은 `0.5.0`
+저장소에서 회사 scope와 registry metadata를 적용하고 core version과 같은 `0.6.0`
 및 artifact digest를 기록한다. 또는 서비스 저장소에 검토한 파일을 vendor하고
 상대 `file:` dependency로 고정한다. 외부 checkout의 `private:true`를 직접 바꾸거나
 그 checkout에서 publish하지 않으며, 외부 Git URL·개발자 절대경로를 사내
@@ -207,7 +205,7 @@ lockfile에 남기지 않는다.
 
 같은 tag의 `sdk-dotnet/`은 .NET 8 Release build와 `compat/desktop-auth-v1.json` 공용
 vector를 통과한 뒤 내부 NuGet package 또는 reviewed source reference로 공급한다.
-Package version은 core와 같은 `0.5.0`으로 고정하고, 외부 NuGet/Git URL에서 runtime에
+Package version은 core와 같은 `0.6.0`으로 고정하고, 외부 NuGet/Git URL에서 runtime에
 최신 SDK를 내려받지 않는다.
 
 Checkout은 상위 `Directory.Build.props/targets`가 없는 승인된 격리 root에 두고,
@@ -223,17 +221,17 @@ dotnet build /work/vendor-relu-ai-bridge/examples/wpf-android-log-viewer/WpfAndr
 dotnet pack /work/vendor-relu-ai-bridge/sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj \
   -c Release --no-build -o /work/release/nuget \
   -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false \
-  -p:Version=0.5.0 -p:PackageVersion=0.5.0
-unzip -l /work/release/nuget/Relu.AI.Bridge.DesktopConnector.0.5.0.nupkg
-unzip -p /work/release/nuget/Relu.AI.Bridge.DesktopConnector.0.5.0.nupkg \
+  -p:Version=0.6.0 -p:PackageVersion=0.6.0
+unzip -l /work/release/nuget/Relu.AI.Bridge.DesktopConnector.0.6.0.nupkg
+unzip -p /work/release/nuget/Relu.AI.Bridge.DesktopConnector.0.6.0.nupkg \
   Relu.AI.Bridge.DesktopConnector.nuspec > /work/release/nuget/Relu.AI.Bridge.DesktopConnector.nuspec
-sha256sum /work/release/nuget/Relu.AI.Bridge.DesktopConnector.0.5.0.nupkg \
-  > /work/release/nuget/Relu.AI.Bridge.DesktopConnector.0.5.0.nupkg.sha256
+sha256sum /work/release/nuget/Relu.AI.Bridge.DesktopConnector.0.6.0.nupkg \
+  > /work/release/nuget/Relu.AI.Bridge.DesktopConnector.0.6.0.nupkg.sha256
 ```
 
 NuGet inventory에는 최소한 `lib/net8.0` DLL·XML 문서, `NUGET_README_KO.md`,
 `LICENSE`만 있는지 확인한다. 추출한 nuspec의 package ID와 version이 각각
-`Relu.AI.Bridge.DesktopConnector`, `0.5.0`이고 dependency group이 비어 있는지도
+`Relu.AI.Bridge.DesktopConnector`, `0.6.0`이고 dependency group이 비어 있는지도
 확인한다. 승인된 내부 NuGet feed에는 이 검증된 `.nupkg`와 SHA-256/provenance 기록을
 함께 보관하고, 같은 버전 파일을 교체하지 않는다.
 
@@ -258,8 +256,8 @@ provenance를 먼저 확인한다. 회사 전용 분석 지침이 필요하면 e
 사용한다. 예상값은 다음 둘이다.
 
 ```text
-refs/tags/v57.2 raw object = 24bdfb9dfa2dc92883761426dd94259756fa197e
-refs/tags/v57.2^{} commit  = da1d152cff27890903d158fe96751de3aab883cc
+refs/tags/v58.2 raw object = 9e9bdafee101a7bb2eac57f60d14c5ec1fa30989
+refs/tags/v58.2^{} commit  = add693d8b338ba9599dbcbc3e300b1ab8c000897
 ```
 
 baseline bundle도 extra object 위험이 있으므로 checksum/tag 확인 후 곧바로 운영
@@ -269,47 +267,47 @@ repo fetch를 이미 통과해야 하며, 사내에서는 이를 독립 반복�
 
 ```bash
 git bundle list-heads \
-  /quarantine/perfetto-v57.2-public-baseline/perfetto-v57.2-upstream.bundle
-# 정확히 위 tag object와 refs/tags/v57.2 한 줄이어야 함
+  /quarantine/perfetto-v58.2-public-baseline/perfetto-v58.2-upstream.bundle
+# 정확히 위 tag object와 refs/tags/v58.2 한 줄이어야 함
 
-git init --bare /quarantine/perfetto-v57.2-verify.git
-git -C /quarantine/perfetto-v57.2-verify.git fetch --no-tags \
-  /quarantine/perfetto-v57.2-public-baseline/perfetto-v57.2-upstream.bundle \
-  refs/tags/v57.2:refs/tags/v57.2
-git -C /quarantine/perfetto-v57.2-verify.git cat-file -t refs/tags/v57.2
-git -C /quarantine/perfetto-v57.2-verify.git rev-parse refs/tags/v57.2
-git -C /quarantine/perfetto-v57.2-verify.git rev-parse 'refs/tags/v57.2^{}'
+git init --bare /quarantine/perfetto-v58.2-verify.git
+git -C /quarantine/perfetto-v58.2-verify.git fetch --no-tags \
+  /quarantine/perfetto-v58.2-public-baseline/perfetto-v58.2-upstream.bundle \
+  refs/tags/v58.2:refs/tags/v58.2
+git -C /quarantine/perfetto-v58.2-verify.git cat-file -t refs/tags/v58.2
+git -C /quarantine/perfetto-v58.2-verify.git rev-parse refs/tags/v58.2
+git -C /quarantine/perfetto-v58.2-verify.git rev-parse 'refs/tags/v58.2^{}'
 ```
 
 검역 담당자는 `git cat-file --batch-all-objects`의 전체 ID 집합과
-`git rev-list --objects refs/tags/v57.2`의 ID 집합도 정렬 비교한다. 동일한 빈
+`git rev-list --objects refs/tags/v58.2`의 ID 집합도 정렬 비교한다. 동일한 빈
 검역 repo에서 exact tag만 새 bundle로 만든 뒤에만
 `/srv/git/vendor/perfetto-public.git`에 fetch한다. 원본 inbound bundle을 사내
 company fork나 baseline mirror에 직접 fetch하지 않는다.
 
 ```bash
-git -C /quarantine/perfetto-v57.2-verify.git \
+git -C /quarantine/perfetto-v58.2-verify.git \
   cat-file --batch-all-objects --batch-check='%(objectname)' \
-  | LC_ALL=C sort -u > /quarantine/perfetto-v57.2-all-objects.txt
-git -C /quarantine/perfetto-v57.2-verify.git \
-  rev-list --objects refs/tags/v57.2 \
+  | LC_ALL=C sort -u > /quarantine/perfetto-v58.2-all-objects.txt
+git -C /quarantine/perfetto-v58.2-verify.git \
+  rev-list --objects refs/tags/v58.2 \
   | awk '{print $1}' | LC_ALL=C sort -u \
-  > /quarantine/perfetto-v57.2-reachable-objects.txt
-cmp /quarantine/perfetto-v57.2-all-objects.txt \
-  /quarantine/perfetto-v57.2-reachable-objects.txt
+  > /quarantine/perfetto-v58.2-reachable-objects.txt
+cmp /quarantine/perfetto-v58.2-all-objects.txt \
+  /quarantine/perfetto-v58.2-reachable-objects.txt
 
-git -C /quarantine/perfetto-v57.2-verify.git bundle create \
-  /quarantine/perfetto-v57.2-sanitized.bundle refs/tags/v57.2
-git bundle list-heads /quarantine/perfetto-v57.2-sanitized.bundle
+git -C /quarantine/perfetto-v58.2-verify.git bundle create \
+  /quarantine/perfetto-v58.2-sanitized.bundle refs/tags/v58.2
+git bundle list-heads /quarantine/perfetto-v58.2-sanitized.bundle
 
 git init --bare /srv/git/vendor/perfetto-public.git
 git -C /srv/git/vendor/perfetto-public.git fetch --no-tags \
-  /quarantine/perfetto-v57.2-sanitized.bundle \
-  refs/tags/v57.2:refs/tags/v57.2
+  /quarantine/perfetto-v58.2-sanitized.bundle \
+  refs/tags/v58.2:refs/tags/v58.2
 ```
 
 `cmp`가 한 바이트라도 다르면 중단한다. sanitized bundle의 head도 정확히
-`24bdfb9… refs/tags/v57.2` 한 줄이어야 한다. 검역 임시 repo/목록/원본 bundle의
+`9e9bdaf… refs/tags/v58.2` 한 줄이어야 한다. 검역 임시 repo/목록/원본 bundle의
 보존·폐기는 사내 evidence retention 정책으로 처리하며 company checkout 아래로
 옮기지 않는다.
 
@@ -318,7 +316,7 @@ git -C /srv/git/vendor/perfetto-public.git fetch --no-tags \
 ```bash
 git -C /work/company-perfetto fetch --no-tags \
   /srv/git/vendor/perfetto-public.git \
-  refs/tags/v57.2:refs/vendor/google/perfetto-v57.2
+  refs/tags/v58.2:refs/vendor/google/perfetto-v58.2
 ```
 
 회사 branch/tag는 바꾸지 않는다.
@@ -336,7 +334,7 @@ printf '%s\n' "$COMPANY_PERFETTO_SHA"
 
 진단기는 네트워크 fetch를 하지 않고 public commit object가 이미 있는지 요구한다.
 
-- `direct-descendant`: public v57.2가 company HEAD의 조상이다.
+- `direct-descendant`: public v58.2가 company HEAD의 조상이다.
 - `not-direct-descendant`: rebase/cherry-pick/독립 fork일 수 있다.
 - 민감 diff: public plugin API, plugin manager/discovery, default plugin 목록,
   Vite/build 경로 변경을 보여 준다.
@@ -395,7 +393,7 @@ plugin·adapter·default plugin 변경을 한 transaction으로 취급하며
 ## 9. company-only adapter 격리
 
 회사 API 차이가 없으면 이 단계는 생략한다. 차이가 있으면 외부 generic
-`perfetto_adapter/v57`를 수정하지 않고 완전한 교체본을 사내 integration
+`perfetto_adapter/v58`을 수정하지 않고 완전한 교체본을 사내 integration
 저장소에 둔다.
 
 `COMPANY_ADAPTER.json`:
@@ -404,7 +402,7 @@ plugin·adapter·default plugin 변경을 한 transaction으로 취급하며
 {
   "schema_version": 1,
   "company_perfetto_commit": "사내에서_확인한_정확한_40자리_SHA",
-  "base_adapter": "v57"
+  "base_adapter": "v58"
 }
 ```
 
@@ -428,6 +426,10 @@ company HEAD가 일치해야 한다. 교체는 인접 stage와 rename/rollback t
 
 ## 10. 사내 CI와 승격 게이트
 
+Perfetto v58.2 build worker의 `python3` 또는 `EMSDK_PYTHON`은 3.10 이상이어야 한다.
+macOS ARM64 worker라면 Rosetta 2 또는 실행 가능한 Java runtime도 필요하다. CI image에서
+Java는 11 이상으로 버전을 고정하고 아래 스크립트의 사전 검사도 우회하지 않는다.
+
 최소 명령:
 
 ```bash
@@ -448,10 +450,9 @@ company HEAD가 일치해야 한다. 교체는 인접 stage와 rename/rollback t
 5. synthetic REF/DUT 정렬 회귀 테스트
 6. 승인된 실제 trace의 end-to-end 테스트(결과는 사내 artifact storage만 사용)
 7. loopback-only bridge, origin/token과 approval policy 보안 테스트:
-   새 init의 `trusted_always` 무프롬프트 실행·grant 미생성, policy 누락 시 legacy 키
-   없음/`true`의 `manual` 유지와 `false`의 `trusted_always` 보존,
-   invalid/conflicting policy fail-closed, `manual` grant/revoke, 정책 전환 시 기존
-   grant 무효화, once-only reconciliation interlock
+   새 init과 policy 누락의 `trusted_always` 무프롬프트 실행·grant 미생성,
+   폐기/invalid policy fail-closed, `manual` grant/revoke, 정책 전환 시 기존 grant
+   무효화, once-only reconciliation interlock
 8. Desktop endpoint/app identity/stale selection/restart, .NET HMAC vector와 `net8.0-windows` WPF 예제 build
 9. Skill source checksum, Claude/Codex install/verify/uninstall과 prompt-injection 경계
 10. dependency/license 및 build artifact digest 검토

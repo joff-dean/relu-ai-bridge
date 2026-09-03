@@ -1,6 +1,6 @@
 // Copyright (c) 2026. All rights reserved.
 
-import type {PerfettoV57Adapter} from '../../perfetto_adapter/v57';
+import type {PerfettoV58Adapter} from '../../perfetto_adapter/v58';
 import {
   PERFETTO_AUTH_NONCE_HEX_LENGTH,
   PERFETTO_AUTH_PROOF_HEX_LENGTH,
@@ -64,7 +64,7 @@ export interface PerfettoBridgeClientOptions {
   readonly clientId: string;
   readonly pluginId: string;
   readonly pluginVersion: string;
-  readonly adapter: PerfettoV57Adapter;
+  readonly adapter: PerfettoV58Adapter;
   readonly onStatus?: (status: BridgeConnectionStatus) => void;
   readonly socketFactory?: (url: string) => BridgeSocket;
   /** Deterministic unit-test seam. Production plugin은 기본 Web Crypto만 사용한다. */
@@ -621,8 +621,8 @@ function validateAuthProof(value: unknown, name: string): asserts value is strin
 }
 
 function authCrypto(): Crypto {
-  const provider = globalThis.crypto;
-  if (!provider?.subtle) {
+  const provider = (globalThis as {crypto?: Crypto}).crypto;
+  if (provider === undefined || provider.subtle === undefined) {
     throw new Error('Web Crypto를 사용할 수 없어 안전하게 인증할 수 없습니다.');
   }
   return provider;

@@ -221,7 +221,7 @@ Perfetto UI plugin
   → /perfetto/ws exact Origin/plugin audience + fresh nonce mutual HMAC
   → server proof 뒤에만 client/trace descriptor 공개(raw token wire 미전송)
   → server-owned closed method set
-  → PerfettoAdapterV57
+  → PerfettoV58Adapter
   → tab 내부 trace.engine
 ```
 
@@ -298,7 +298,7 @@ skills/                  Claude/Codex 공통 분석 playbook 정본
 
 src/perfetto-*.mjs       Connector #1 broker/store/tools
 plugin/                  Perfetto in-tree UI plugin
-perfetto_adapter/        v57 public API adapter
+perfetto_adapter/        v58 public API adapter
 alignment/               bounded pure alignment engine
 ```
 

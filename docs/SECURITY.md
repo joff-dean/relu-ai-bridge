@@ -109,11 +109,10 @@ string의 `maxLength`는 이 전체 상한을 대체하지 않으며 둘 다 통
 
 모든 보호 호출은 local approval policy를 거친다. 새 `init` 설정의 기본 정책은
 `trusted_always`다. 신뢰된 단일 사용자 로컬 환경을 전제로 `always` 결정을 허용한
-호출을 별도 UI 확인이나 grant 저장 없이 즉시 통과시킨다. 0.4.x 설정에서 `policy`와
-deprecated `enforceMutatingToolGrants`가 모두 없거나 legacy 값이 `true`이면 안전한
-업그레이드를 위해 `manual`로 해석한다. legacy 값이 `false`이면 이전 무프롬프트
-동작을 보존해 `trusted_always`로 해석한다. 대화형 승인이 필요한 장비는 legacy 키를
-제거하고 `approvals.policy:"manual"`을 명시한다.
+호출을 별도 UI 확인이나 grant 저장 없이 즉시 통과시킨다. `policy`를 생략해도
+`trusted_always`를 적용한다. 대화형 승인이 필요한 장비만
+`approvals.policy:"manual"`을 명시한다. 폐기됐거나 알 수 없는 승인 설정은 startup에서
+거부해 모호한 권한 해석을 남기지 않는다.
 
 `trusted_always`는 AI 모델, browser content, Android log 또는 trace를 신뢰한다는 뜻이
 아니다. MCP/client 인증, permission, server-owned service/Capability registry,
@@ -296,6 +295,7 @@ Bridge는 `dataDir/.instance-lock`으로 하나의 data directory에 한 process
 
 ## Perfetto 전용 방어
 
+- 공식 Perfetto `v58.2` exact tag/commit과 RELU `v58` adapter만 허용하며 이전 기준선 fallback 없음
 - `/perfetto/ws` exact Origin과 raw token 없는 nonce/HMAC 상호 인증
 - server-owned closed method set
 - page-load random client identity와 trace binding

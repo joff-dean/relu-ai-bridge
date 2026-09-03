@@ -2,7 +2,7 @@
 
 RELU AI Bridge는 Claude·Codex 같은 로컬 AI 클라이언트를 사내 웹 분석 서비스와 Windows 데스크톱 분석 프로그램에 연결하는 **독립 구현 local-first MCP 플랫폼**이다. Browser/WPF Connector는 사용자가 현재 보는 화면의 구조화된 Context만 알려주고, 실제 조회·UI 동작은 서비스별로 사전에 등록한 Capability만 실행한다. AI가 임의 URL, HTTP method, header, script, DOM selector, reflection target 또는 shell command를 만드는 범용 proxy가 아니다.
 
-Perfetto v57.2 REF/DUT 분석은 이 플랫폼의 첫 번째 커넥터다. 이후 Android Log Viewer, LLM Wiki, Issue DB 같은 서비스를 같은 방식으로 추가할 수 있다.
+Perfetto v58.2 REF/DUT 분석은 이 플랫폼의 첫 번째 커넥터다. 이후 Android Log Viewer, LLM Wiki, Issue DB 같은 서비스를 같은 방식으로 추가할 수 있다.
 
 ## 전체 구조
 
@@ -46,7 +46,7 @@ Context Plane과 Data Plane을 분리한다.
 - resource·`policyEpoch` 단위의 영속 mutation operation ledger, 수동 reconciliation과 검증된 archive
 - Claude가 generic 도구를 우선 찾도록 하는 설정과 `anthropic/alwaysLoad` metadata
 - Claude/Codex 공통 `relu-analyze-selection` Skill과 checksum 기반 설치·검증·제거 도구
-- Perfetto v57.2 Connector #1, bounded read-only SQL, durable REF/DUT, coarse correlation + constrained DTW
+- Perfetto v58.2 Connector #1, bounded read-only SQL, durable REF/DUT, coarse correlation + constrained DTW
 - 제한된 파일/명령 profile, Goal, Compact & Resume, browser worker 기능
 - 외부 release bundle, manifest, 사내 immutable mirror와 integration 검증 자동화
 - runtime npm dependency와 telemetry 없음
@@ -55,7 +55,7 @@ Chat On Steroids나 다른 외부 agent 프로젝트의 코드·runtime을 복�
 
 ## 빠른 시작
 
-요구사항은 Node.js 20.11 이상이다. macOS/Linux와 Windows local server를 지원하며, .NET 예제는 .NET 8 SDK가 필요하다. Perfetto overlay script는 WSL 또는 Linux build worker를 권장한다.
+요구사항은 Node.js 20.11 이상이다. macOS/Linux와 Windows local server를 지원하며, .NET 예제는 .NET 8 SDK가 필요하다. Perfetto v58.2 bootstrap·build·개발 서버에는 Python 3.10 이상이 필요하다. macOS ARM64 build에는 Rosetta 2 또는 Java 11 이상 runtime도 필요하며, overlay script는 WSL 또는 Linux build worker를 권장한다.
 
 ```bash
 node ./bin/relu-ai-bridge.mjs init \
@@ -214,11 +214,9 @@ nonce에 묶인 mutual HMAC을 검증한다. `bindingFields`는 dataset 단위 �
 
 `trusted_always`는 `always` 결정을 허용한 보호 호출을 추가 UI 확인, 재시도 또는
 개별 grant 저장 없이 즉시 통과시킨다. 따라서 반복 사용을 위해 승인하거나 나중에
-개별 철회할 항목이 생기지 않는다. 기존 0.4 설정에서 `policy`가 없고 deprecated
-`enforceMutatingToolGrants`도 없거나 `true`이면, 업그레이드만으로 권한이 넓어지지
-않도록 `manual`로 해석한다. 기존 값이 `false`이면 이전의 무프롬프트 동작을 보존해
-`trusted_always`로 해석한다. 어떤 경우든 legacy 키를 제거하고 원하는 `policy`를
-명시한 뒤 Bridge를 재시작하는 것을 권장한다.
+개별 철회할 항목이 생기지 않는다. `policy`를 생략해도 `trusted_always`가 적용된다.
+대화형 통제가 필요한 장비만 `"policy":"manual"`을 명시하고 Bridge를 재시작한다.
+폐기된 승인 키나 알 수 없는 설정은 조용히 해석하지 않고 시작 단계에서 거부한다.
 
 | 정책 | 일반 보호 호출 | 저장 상태 |
 | --- | --- | --- |
@@ -269,26 +267,31 @@ node ./bin/relu-ai-bridge.mjs archive-ledger
 
 ## Perfetto Connector #1
 
-외부 개발의 canonical baseline은 공식 Perfetto `v57.2`다.
+외부 개발의 canonical baseline은 공식 Perfetto `v58.2`다.
+Perfetto 명령을 실행하기 전에 `python3 --version`이 3.10 이상인지 확인한다. 다른
+interpreter를 쓸 때는 `EMSDK_PYTHON`을 실행 파일 경로로 지정한다. 스크립트도 실제로
+선택된 interpreter를 검사해 오래된 Python으로 생성되는 불완전한 build를 막는다.
+macOS ARM64에서는 bundled Closure compiler 실행을 위해 Rosetta 2를 설치하거나
+Java 11 이상 runtime을 `PATH`에 둔다.
 
 | 항목 | 값 |
 | --- | --- |
-| Release | `v57.2` |
-| Annotated tag object | `24bdfb9dfa2dc92883761426dd94259756fa197e` |
-| Peeled commit | `da1d152cff27890903d158fe96751de3aab883cc` |
-| Adapter | `v57` |
+| Release | `v58.2` |
+| Annotated tag object | `9e9bdafee101a7bb2eac57f60d14c5ec1fa30989` |
+| Peeled commit | `add693d8b338ba9599dbcbc3e300b1ab8c000897` |
+| Adapter | `v58` |
 | 사내 target | 외부 저장소에 기록하지 않으며 내부 integration manifest에서 full SHA·ancestry 검증 |
 
 ```bash
-scripts/perfetto/bootstrap.sh /absolute/work/perfetto-v57.2
-scripts/perfetto/integrate.sh --mode symlink /absolute/work/perfetto-v57.2
-scripts/perfetto/build-test.sh --install-deps --typecheck /absolute/work/perfetto-v57.2
-scripts/perfetto/run-dev-server.sh /absolute/work/perfetto-v57.2
+scripts/perfetto/bootstrap.sh /absolute/work/perfetto-v58.2
+scripts/perfetto/integrate.sh --mode symlink /absolute/work/perfetto-v58.2
+scripts/perfetto/build-test.sh --install-deps --typecheck /absolute/work/perfetto-v58.2
+scripts/perfetto/run-dev-server.sh /absolute/work/perfetto-v58.2
 ```
 
 REF와 DUT trace를 별도 탭에서 열고 `/admin/`에서 session에 배정한다. 권장 MCP 흐름은 `perfetto_clients`, `perfetto_sessions`, `perfetto_query`, `perfetto_align(applySelection:false)`, 결과 검토, `perfetto_align(applySelection:true)` 순서다. Trace 원본은 Bridge로 복사되지 않고 SQL은 각 탭의 Trace Processor에서 실행된다.
 
-사내 fork를 외부 baseline으로 만들지 않는다. 공식 v57.2에서 Connector를 개발하고, 회사 버전 차이는 반입 시 company-only adapter/integration으로 분리한다.
+사내 fork를 외부 baseline으로 만들지 않는다. 공식 v58.2에서 Connector를 개발하고, 회사 버전 차이는 반입 시 company-only adapter/integration으로 분리한다.
 
 ## 검증
 
@@ -299,7 +302,7 @@ node --test
 dotnet build ./sdk-dotnet/Relu.AI.Bridge.DesktopConnector.sln -c Release -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
 dotnet run --project ./sdk-dotnet/tests/Relu.AI.Bridge.DesktopConnector.Tests/Relu.AI.Bridge.DesktopConnector.Tests.csproj -c Release -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
 dotnet build ./examples/wpf-android-log-viewer/WpfAndroidLogViewer.Integration.csproj -c Release -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
-dotnet pack ./sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj -c Release --no-build --output /absolute/release-output/nuget -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false -p:Version=0.5.0 -p:PackageVersion=0.5.0
+dotnet pack ./sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj -c Release --no-build --output /absolute/release-output/nuget -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false -p:Version=0.6.0 -p:PackageVersion=0.6.0
 ```
 
 Release/NuGet 공급은 상위 MSBuild 파일이 없는 격리 root에서 수행하고 package inventory,
@@ -309,10 +312,10 @@ nuspec ID/version/빈 dependency group과 SHA-256을
 Perfetto overlay 변경 후:
 
 ```bash
-scripts/perfetto/smoke-test.sh /absolute/work/perfetto-v57.2
-scripts/perfetto/verify-integration.sh /absolute/work/perfetto-v57.2
-scripts/perfetto/build-test.sh --unit-tests /absolute/work/perfetto-v57.2
-scripts/perfetto/build-test.sh --build /absolute/work/perfetto-v57.2
+scripts/perfetto/smoke-test.sh /absolute/work/perfetto-v58.2
+scripts/perfetto/verify-integration.sh /absolute/work/perfetto-v58.2
+scripts/perfetto/build-test.sh --unit-tests /absolute/work/perfetto-v58.2
+scripts/perfetto/build-test.sh --build /absolute/work/perfetto-v58.2
 ```
 
 ## 사내 반입과 반복 개발

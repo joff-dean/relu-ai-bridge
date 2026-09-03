@@ -10,6 +10,7 @@ case "${1:-}" in -h|--help)
   exit 0
 ;; esac
 [ "$#" -ge 1 ] || die "사용법: scripts/perfetto/run-dev-server.sh PERFETTO_DIR [Perfetto 옵션...]"
+assert_perfetto_build_host
 perfetto_dir=$(canonical_existing_dir "$1")
 shift
 "$SCRIPT_DIR/verify-integration.sh" "$perfetto_dir"

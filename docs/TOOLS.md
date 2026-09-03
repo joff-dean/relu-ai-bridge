@@ -129,6 +129,9 @@ node /absolute/path/to/relu-ai-bridge/bin/relu-ai-bridge.mjs archive-ledger
 
 ## Perfetto Connector #1 전용 도구
 
+이 도구 계약은 공식 Perfetto `v58.2`와 RELU `v58` adapter만 지원한다. 다른 Perfetto
+기준선이나 이전 adapter alias는 자동 선택하거나 fallback하지 않는다.
+
 | Tool | 용도 | 변경 | 승인 |
 | --- | --- | --- | --- |
 | `perfetto_clients` | 연결된 탭·opaque trace key·배정 조회 | 없음 | 없음 |

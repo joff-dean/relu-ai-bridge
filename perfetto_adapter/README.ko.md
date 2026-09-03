@@ -1,10 +1,10 @@
-# Perfetto v57 Adapter
+# Perfetto v58 Adapter
 
-`PerfettoV57Adapter`는 RELU AI Bridge 기능이 Perfetto UI 내부 구현에 직접 의존하지
-않도록 공개 API를 한곳에서 감싼다. 검증 기준은 공식 tag `v57.2`, commit
-`da1d152cff27890903d158fe96751de3aab883cc`이다.
+`PerfettoV58Adapter`는 RELU AI Bridge 기능이 Perfetto UI 내부 구현에 직접 의존하지
+않도록 공개 API를 한곳에서 감싼다. 유일한 검증 기준은 공식 tag `v58.2`, commit
+`add693d8b338ba9599dbcbc3e300b1ab8c000897`이다.
 
-## 사용하는 v57.2 공개 API
+## 사용하는 v58.2 공개 API
 
 - `Trace.traceInfo`: trace UUID, 제목, 시간 범위 및 trace 형식
 - `Trace.engine.query(sql)`: Trace Processor SQL 실행
@@ -14,7 +14,7 @@
 
 Perfetto source tree에서의 배치 경로는 `ui/src/perfetto_adapter/`이다. 따라서
 adapter의 import `../../public/trace`, `../../base/time`,
-`../../trace_processor/query_result`는 v57.2 실제 경로에 대응한다.
+`../../trace_processor/query_result`는 v58.2 실제 경로에 대응한다.
 
 ## 데이터 표현 규칙
 
@@ -36,8 +36,8 @@ descriptor를 보낸다. Raw token은 wire에 보내지 않으며 replay, 순서
 
 ## 버전 업그레이드
 
-Perfetto 버전을 올릴 때 기존 adapter를 즉시 수정하지 않는다. 새 버전 전용
-디렉터리(예: `v58/`)를 추가하고 다음 항목을 다시 검증한다.
+Perfetto 기준선을 올릴 때는 하위 호환 alias를 남기지 않고 단일 버전 adapter를
+교체한다. 새 기준선의 exact tag/commit에서 다음 항목을 모두 다시 검증한다.
 
 1. `Trace`, `SelectionManager`, `Engine`, `QueryResult`, `Time` import 경로
 2. area selection의 `kind`, `start`, `end`, `trackUris` 필드

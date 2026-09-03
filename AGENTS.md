@@ -1,6 +1,6 @@
 # RELU AI Bridge engineering contract
 
-This repository is an independent implementation. Do not copy, vendor, download, dynamically load, or execute code from Chat On Steroids or another agent project. RELU core is generic and Perfetto is Connector #1. The only supported Perfetto baseline is the official `google/perfetto` `v57.2` tag resolved to `da1d152cff27890903d158fe96751de3aab883cc`; never replace it with an unverified moving branch.
+This repository is an independent implementation. Do not copy, vendor, download, dynamically load, or execute code from Chat On Steroids or another agent project. RELU core is generic and Perfetto is Connector #1. The only supported Perfetto baseline is the official `google/perfetto` `v58.2` tag resolved to `add693d8b338ba9599dbcbc3e300b1ab8c000897`; never replace it with an unverified moving branch.
 
 ## Non-negotiable security invariants
 
@@ -25,7 +25,7 @@ This repository is an independent implementation. Do not copy, vendor, download,
 
 ## Required verification
 
-Run syntax checks for `src`, `bin`, `scripts`, extension, and alignment JavaScript, verify the Skill source inventory, then run the complete Node test suite. Build the .NET 8 Desktop Connector solution and run its shared HMAC vector test. Overlay into an exact v57.2 checkout and run the Perfetto UI TypeScript/unit/build checks for plugin or adapter changes. Add regression tests for security-boundary changes.
+Run syntax checks for `src`, `bin`, `scripts`, extension, and alignment JavaScript, verify the Skill source inventory, then run the complete Node test suite. Build the .NET 8 Desktop Connector solution and run its shared HMAC vector test. Overlay into an exact v58.2 checkout and run the Perfetto UI TypeScript/unit/build checks for plugin or adapter changes. Add regression tests for security-boundary changes.
 
 ## Documentation
 

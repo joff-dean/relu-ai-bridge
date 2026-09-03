@@ -62,7 +62,7 @@ create_external_drift_release_fixture() {
   bundle_size=$(wc -c < "$output_dir/$bundle_name" | tr -d '[:space:]')
   core_blob=$(git -C "$repository" rev-parse "$tag:compat/relu-ai-bridge.json")
   connector_blob=$(git -C "$repository" rev-parse \
-    "$tag:compat/connectors/perfetto-v57.2.json")
+    "$tag:compat/connectors/perfetto-v58.2.json")
   plugin_tree=$(git -C "$repository" rev-parse \
     "$tag:$(compat_value integration.source_plugin_path)")
   adapter_tree=$(git -C "$repository" rev-parse \
@@ -516,7 +516,7 @@ printf '%s\n' "$metadata_output" | grep -Fq 'source와 target tree가 같거나 
 
 # 활성화 patch는 default_plugins.ts 한 줄 추가만 허용해야 rollback 범위와 같다.
 unauthorized_patch="$test_root/unauthorized-enable.patch"
-cp -- "$fixture/integration/patches/perfetto-v57.2-enable-default-plugin.patch" \
+cp -- "$fixture/integration/patches/perfetto-v58.2-enable-default-plugin.patch" \
   "$unauthorized_patch"
 cat >> "$unauthorized_patch" <<'PATCH'
 diff --git a/UNAUTHORIZED b/UNAUTHORIZED

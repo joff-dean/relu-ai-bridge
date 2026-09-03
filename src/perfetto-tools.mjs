@@ -62,7 +62,7 @@ const alignmentOptionsSchema = objectSchema({
 
 export function createPerfettoToolDefinitions() {
   return [
-    tool('perfetto_clients', 'Start here: list connected Perfetto v57.2 clients by privacy-safe trace key and show REF/DUT assignments.', objectSchema(), { readOnlyHint: true }, CLAUDE_ALWAYS_LOAD),
+    tool('perfetto_clients', 'Start here: list connected Perfetto v58.2 clients by privacy-safe trace key and show REF/DUT assignments.', objectSchema(), { readOnlyHint: true }, CLAUDE_ALWAYS_LOAD),
     tool('perfetto_sessions', 'Create, inspect, attach, detach, or remove durable REF/DUT sessions. Mutating actions use local scoped approval.', objectSchema({
       action: { type: 'string', enum: ['list', 'create', 'get', 'attach', 'detach', 'remove'] },
       sessionId: string('Session id for get, attach, detach, or remove.'),
