@@ -339,10 +339,16 @@ Java 11 이상 runtime을 `PATH`에 둔다.
 
 ```bash
 scripts/perfetto/bootstrap.sh /absolute/work/perfetto-v58.2
-scripts/perfetto/integrate.sh --mode symlink /absolute/work/perfetto-v58.2
+scripts/perfetto/integrate.sh --mode copy /absolute/work/perfetto-v58.2
 scripts/perfetto/build-test.sh --install-deps --typecheck /absolute/work/perfetto-v58.2
 scripts/perfetto/run-dev-server.sh /absolute/work/perfetto-v58.2
 ```
+
+개발 중 plugin/adapter source를 바꾼 뒤에는 변경을 개발 브랜치에 커밋하고
+`scripts/perfetto/integrate.sh --mode copy --refresh /absolute/work/perfetto-v58.2`로
+overlay를 갱신한다. v58.2 Vite는 symlink의 실경로에서 bare package import를
+해석하므로 authoritative typecheck/unit/build와 Windows 반입 검증은 clean commit의
+copy overlay를 사용한다.
 
 REF와 DUT trace를 별도 탭에서 열고 `/admin/`에서 session에 배정한다. 권장 MCP 흐름은 `perfetto_clients`, `perfetto_sessions`, `perfetto_query`, `perfetto_align(applySelection:false)`, 결과 검토, `perfetto_align(applySelection:true)` 순서다. Trace 원본은 Bridge로 복사되지 않고 SQL은 각 탭의 Trace Processor에서 실행된다.
 

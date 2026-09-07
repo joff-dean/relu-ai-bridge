@@ -183,8 +183,11 @@ node scripts/skills/manage-skills.mjs verify-source
 NuGet pack/version/nuspec/dependency/inventory/hash 검증은
 [사내 동기화 가이드](INTERNAL_SYNC_KO.md#sdk와-skill-사내-배포)를 따른다.
 
-개발 중에는 공개 checkout에 한해 `--mode symlink --allow-dirty-source`를 사용할 수
-있다. release/사내 통합은 clean RELU checkout의 copy overlay만 사용한다.
+개발 중 source-only 확인에는 공개 checkout에 한해
+`--mode symlink --allow-dirty-source`를 사용할 수 있다. v58.2 Vite는 symlink의
+실경로에서 bare package import를 해석하므로 typecheck/unit/build 전에는 변경을
+개발 브랜치에 커밋하고 `--mode copy --refresh`로 갱신한다. release/사내 통합도 clean
+RELU commit의 copy overlay만 사용한다.
 `--install-deps`는 공식 Perfetto dependency 설치를 실행하므로 승인된 네트워크와
 package mirror 정책을 먼저 확인한다.
 
