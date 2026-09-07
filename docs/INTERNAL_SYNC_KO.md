@@ -476,7 +476,8 @@ Java는 11 이상으로 버전을 고정하고 아래 스크립트의 사전 검
 기본 `10000`, REF/DUT 두 UI는 `--instances 2`를 사용한다. 이 런처는 같은 origin
 bootstrap으로 runtime Perfetto credential을 페이지 메모리에만 전달하므로 사용자에게
 token을 입력시키거나 회사 config에 credential을 기록하지 않는다. 종료 뒤 임시
-runtime directory가 남지 않았는지, 각 UI가 별도 client로 보이는지 함께 확인한다.
+runtime directory가 남지 않았는지, 공유 builder를 사용하는 각 UI origin이 별도
+client로 보이는지 함께 확인한다.
 
 최소 명령:
 

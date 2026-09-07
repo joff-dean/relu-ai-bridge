@@ -50,12 +50,12 @@ export function parseLocalStackArgs(argv) {
     }
     index += 1;
   }
-  const ports = new Set([result.bridgePort]);
+  const ports = new Set([result.bridgePort, result.upstreamPort]);
+  if (ports.size !== 2) throw new Error('Local stack ports overlap or exceed 65535');
   for (let index = 0; index < result.instances; index += 1) {
-    for (const port of [result.uiPort + index, result.upstreamPort + index]) {
-      if (port > 65_535 || ports.has(port)) throw new Error('Local stack ports overlap or exceed 65535');
-      ports.add(port);
-    }
+    const port = result.uiPort + index;
+    if (port > 65_535 || ports.has(port)) throw new Error('Local stack ports overlap or exceed 65535');
+    ports.add(port);
   }
   return result;
 }
@@ -198,26 +198,22 @@ async function main() {
 
   try {
     await app.listen();
-    for (let index = 0; index < options.instances; index += 1) {
-      const upstreamPort = options.upstreamPort + index;
-      const child = spawn(
-        path.join(options.perfettoDir, 'ui', 'run-dev-server'),
-        [
-          '--serve-host', LOOPBACK_HOST,
-          '--serve-port', String(upstreamPort),
-          '--bundle',
-          '--title', `RELU Perfetto ${index + 1}`,
-        ],
-        {stdio: ['ignore', 'inherit', 'inherit'], shell: false},
-      );
-      children.push(child);
-    }
-    await Promise.all(children.map((child, index) =>
-      waitForHttp(options.upstreamPort + index, child)));
+    const child = spawn(
+      path.join(options.perfettoDir, 'ui', 'run-dev-server'),
+      [
+        '--serve-host', LOOPBACK_HOST,
+        '--serve-port', String(options.upstreamPort),
+        '--bundle',
+        '--title', 'RELU Perfetto',
+      ],
+      {stdio: ['ignore', 'inherit', 'inherit'], shell: false},
+    );
+    children.push(child);
+    await waitForHttp(options.upstreamPort, child);
     for (let index = 0; index < options.instances; index += 1) {
       const proxy = createPerfettoLocalProxy({
         publicPort: options.uiPort + index,
-        upstreamPort: options.upstreamPort + index,
+        upstreamPort: options.upstreamPort,
         bridgePort: options.bridgePort,
         connectorToken,
       });
