@@ -45,6 +45,15 @@ process 내부만으로 방어하지 못한다.
 - HTTP Data Plane은 exact config URL에만 연결하고 redirect를 따르지 않는다.
 - RELU port를 LAN/인터넷에 직접 publish하지 않는다.
 
+Perfetto 개발용 `run-local-stack.sh`는 UI와 `/perfetto/ws`를 각각의 exact
+`http://127.0.0.1:<ui-port>` origin에 묶는다. 플러그인이 요청하는 고정
+`POST /relu/perfetto-bootstrap`은 exact Host/Origin, `Sec-Fetch-Site: same-origin`,
+`Sec-Fetch-Mode: cors`, `Sec-Fetch-Dest: empty`를 모두 확인하고 bounded JSON을
+`no-store`로 반환한다. 응답에는 runtime Perfetto credential만 있으며 endpoint,
+control credential, Capability 또는 permission은 없다. endpoint는 plugin source가
+현재 origin의 고정 `/perfetto/ws`로 파생한다. Trace/browser 입력은 이 계약을 변경하지
+못한다.
+
 `mcpAuth:path`는 제한된 client 호환용이다. Token이 URL path·proxy log·history에 남을 위험이 있으므로 Bearer를 기본으로 사용한다.
 
 표준 Streamable HTTP MCP와 browser Admin UI의 Bearer 방식은 plain loopback 위에서
@@ -68,7 +77,9 @@ sandbox 경계 밖이다. Connector와 packaged Chrome Companion에는 이 잔�
 Perfetto와 generic browser service token은 최소 24자이며 audience마다 다르게 발급한다.
 여러 browser runtime/HTTP Data Plane은 각각 별도 service ID와 `tokenEnv`를 사용한다.
 Token을 Git, config JSON, URL, `localStorage`, transcript와 audit에 넣지 않는다. Perfetto
-plugin은 전용 token을 현재 페이지의 JavaScript 메모리에만 둔다. Admin UI는 control
+local stack은 실행마다 서로 다른 control/connector token을 메모리에 만들고 종료 시
+0700 임시 data directory와 함께 폐기한다. 임시 config JSON에도 token 값은 쓰지 않는다.
+Plugin은 same-origin bootstrap으로 받은 전용 token을 현재 페이지의 JavaScript 메모리에만 둔다. Admin UI는 control
 token을 해당 탭의 `sessionStorage`에, 선택형 Chrome companion은
 `chrome.storage.session`에만 둔다. Companion 저장 token은 HMAC key로만 사용되고 bearer
 값 자체는 loopback request에 실리지 않는다.
@@ -343,6 +354,8 @@ Bridge는 `dataDir/.instance-lock`으로 하나의 data directory에 한 process
 ## Perfetto 전용 방어
 
 - 공식 Perfetto `v58.2` exact tag/commit과 RELU `v58` adapter만 허용하며 이전 기준선 fallback 없음
+- 개발 local stack의 exact same-origin POST bootstrap, fixed endpoint derivation,
+  no-store/page-memory credential과 종료 시 임시 runtime 폐기
 - `/perfetto/ws` exact Origin과 raw token 없는 nonce/HMAC 상호 인증
 - server-owned closed method set
 - page-load random client identity와 trace binding

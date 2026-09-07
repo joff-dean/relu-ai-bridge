@@ -5,11 +5,9 @@ import type {App} from '../../public/app';
 import type {PerfettoPlugin} from '../../public/plugin';
 import type {Setting} from '../../public/settings';
 import type {Trace} from '../../public/trace';
-import {
-  DEFAULT_PERFETTO_BRIDGE_URL,
-  type TraceRole,
-} from '../../perfetto_adapter/protocol';
+import {type TraceRole} from '../../perfetto_adapter/protocol';
 import {PerfettoV58Adapter} from '../../perfetto_adapter/v58';
+import {loadPerfettoBootstrap} from './bootstrap';
 import {
   PerfettoBridgeClient,
   type BridgeConnectionStatus,
@@ -24,9 +22,9 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
   static readonly description =
     'RELU AI Bridge를 통해 REF/DUT trace 분석과 화면 선택을 제공하는 Perfetto 플러그인';
 
-  private static bridgeUrlSetting: Setting<string>;
   private static autoConnectSetting: Setting<boolean>;
   private static bridgeToken = '';
+  private static bridgeEndpoint = '';
 
   private trace?: Trace;
   private adapter?: PerfettoV58Adapter;
@@ -38,19 +36,11 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
   };
 
   static onActivate(app: App): void {
-    ReluPerfettoBridgePlugin.bridgeUrlSetting = app.settings.register({
-      id: `${PLUGIN_ID}#BridgeUrl`,
-      name: 'RELU AI Bridge URL',
-      description:
-        '로컬 bridge WebSocket 주소입니다. 보안을 위해 127.0.0.1의 /perfetto/ws만 허용합니다.',
-      schema: z.string(),
-      defaultValue: DEFAULT_PERFETTO_BRIDGE_URL,
-    });
     ReluPerfettoBridgePlugin.autoConnectSetting = app.settings.register({
       id: `${PLUGIN_ID}#AutoConnect`,
       name: 'RELU AI Bridge 자동 연결',
       description:
-        '현재 Perfetto 페이지 메모리에 token이 있으면 새 trace를 열 때 자동 연결합니다.',
+        '동일 출처 RELU local stack에서 runtime credential을 받아 새 trace를 자동 연결합니다.',
       schema: z.boolean(),
       defaultValue: true,
     });
@@ -71,12 +61,9 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
       this.traceInstanceClientId = undefined;
     });
 
-    if (
-      ReluPerfettoBridgePlugin.autoConnectSetting.get() &&
-      ReluPerfettoBridgePlugin.bridgeToken !== ''
-    ) {
+    if (ReluPerfettoBridgePlugin.autoConnectSetting.get()) {
       try {
-        this.createBridge().connect();
+        await this.connect();
       } catch (error) {
         console.error('RELU AI Bridge 자동 연결 실패', error);
       }
@@ -88,7 +75,7 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
       id: `${PLUGIN_ID}.Connect`,
       name: 'RELU AI Bridge 연결',
       source: COMMAND_SOURCE,
-      callback: async () => this.connectWithPrompt(true),
+      callback: async () => this.connect(),
     });
 
     trace.commands.registerCommand({
@@ -135,7 +122,7 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
             if (this.status.state === 'connected') {
               this.bridge?.disconnect();
             } else {
-              void this.connectWithPrompt(false).catch((error) => {
+              void this.connect().catch((error) => {
                 console.error('RELU AI Bridge 연결 실패', error);
               });
             }
@@ -145,16 +132,15 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
     });
   }
 
-  private async connectWithPrompt(forcePrompt: boolean): Promise<void> {
+  private async connect(): Promise<void> {
     if (!this.trace) throw new Error('trace가 아직 준비되지 않았습니다.');
-    let token = ReluPerfettoBridgePlugin.bridgeToken;
-    if (forcePrompt || token === '') {
-      const entered = await this.trace.omnibox.prompt(
-        'Perfetto connector 전용 token을 입력하세요 (페이지 메모리에만 유지)',
-      );
-      if (entered === undefined || entered.trim() === '') return;
-      token = entered.trim();
-      ReluPerfettoBridgePlugin.bridgeToken = token;
+    if (
+      ReluPerfettoBridgePlugin.bridgeToken === '' ||
+      ReluPerfettoBridgePlugin.bridgeEndpoint === ''
+    ) {
+      const bootstrap = await loadPerfettoBootstrap();
+      ReluPerfettoBridgePlugin.bridgeToken = bootstrap.token;
+      ReluPerfettoBridgePlugin.bridgeEndpoint = bootstrap.endpoint;
     }
     this.bridge?.dispose();
     this.bridge = undefined;
@@ -167,7 +153,7 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
       throw new Error('trace가 아직 준비되지 않았습니다.');
     }
     this.bridge = new PerfettoBridgeClient({
-      endpoint: ReluPerfettoBridgePlugin.bridgeUrlSetting.get(),
+      endpoint: ReluPerfettoBridgePlugin.bridgeEndpoint,
       token: ReluPerfettoBridgePlugin.bridgeToken,
       origin: globalThis.location.origin,
       clientId: this.traceInstanceClientId ??= newClientId(),

@@ -341,8 +341,27 @@ Java 11 이상 runtime을 `PATH`에 둔다.
 scripts/perfetto/bootstrap.sh /absolute/work/perfetto-v58.2
 scripts/perfetto/integrate.sh --mode copy /absolute/work/perfetto-v58.2
 scripts/perfetto/build-test.sh --install-deps --typecheck /absolute/work/perfetto-v58.2
-scripts/perfetto/run-dev-server.sh /absolute/work/perfetto-v58.2
+scripts/perfetto/run-local-stack.sh /absolute/work/perfetto-v58.2
 ```
+
+`run-local-stack.sh`는 기본적으로 `http://127.0.0.1:10000`에서 Perfetto UI와
+`/perfetto/ws`를 같은 origin으로 제공한다. 실행할 때마다 control/Perfetto credential을
+서로 다르게 생성하고, 플러그인은 고정된 same-origin POST bootstrap에서 Perfetto
+credential만 받아 페이지 메모리에 둔다. 따라서 토큰 입력·URL query·browser storage가
+필요 없고, 런처 종료 시 임시 config/data와 credential도 제거된다. 기존의 별도
+Bridge 운영 설정은 위 중앙 bridge 빠른 시작 절차를 계속 사용한다.
+
+REF/DUT처럼 여러 UI가 필요하면 Bridge 하나에 여러 instance를 띄운다.
+
+```bash
+scripts/perfetto/run-local-stack.sh /absolute/work/perfetto-v58.2 --instances 2
+```
+
+이 경우 공개 UI는 `10000`, `10001`, 내부 upstream은 `11000`, `11001`, Bridge는
+`5746`을 사용한다. 필요하면 `--ui-port`, `--upstream-port`, `--bridge-port`로 서로
+겹치지 않는 base port를 지정한다. 기존 방식의 분리 실행이 필요한 진단에는
+`run-dev-server.sh`를 사용할 수 있지만, 동일 출처 bootstrap이 없으므로 자동 연결
+경로가 아니다.
 
 개발 중 plugin/adapter source를 바꾼 뒤에는 변경을 개발 브랜치에 커밋하고
 `scripts/perfetto/integrate.sh --mode copy --refresh /absolute/work/perfetto-v58.2`로
@@ -350,7 +369,7 @@ overlay를 갱신한다. v58.2 Vite는 symlink의 실경로에서 bare package i
 해석하므로 authoritative typecheck/unit/build와 Windows 반입 검증은 clean commit의
 copy overlay를 사용한다.
 
-REF와 DUT trace를 별도 탭에서 열고 `/admin/`에서 session에 배정한다. 권장 MCP 흐름은 `perfetto_clients`, `perfetto_sessions`, `perfetto_query`, `perfetto_align(applySelection:false)`, 결과 검토, `perfetto_align(applySelection:true)` 순서다. Trace 원본은 Bridge로 복사되지 않고 SQL은 각 탭의 Trace Processor에서 실행된다.
+REF와 DUT trace를 별도 UI에서 열고 MCP의 `perfetto_sessions`로 session에 배정한다. 권장 MCP 흐름은 `perfetto_clients`, `perfetto_sessions`, `perfetto_query`, `perfetto_align(applySelection:false)`, 결과 검토, `perfetto_align(applySelection:true)` 순서다. Trace 원본은 Bridge로 복사되지 않고 SQL은 각 UI의 Trace Processor에서 실행된다.
 
 사내 fork를 외부 baseline으로 만들지 않는다. 공식 v58.2에서 Connector를 개발하고, 회사 버전 차이는 반입 시 company-only adapter/integration으로 분리한다.
 

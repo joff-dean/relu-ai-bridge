@@ -45,7 +45,12 @@ test('extension authenticates an exact 127.0.0.1 origin without a raw bearer req
 
 test('Perfetto plugin keeps its connector token in page memory only', async () => {
   const source = await fs.readFile(new URL('../plugin/io.company.RELUPerfettoBridge/index.ts', import.meta.url), 'utf8');
+  const bootstrap = await fs.readFile(new URL('../plugin/io.company.RELUPerfettoBridge/bootstrap.ts', import.meta.url), 'utf8');
   assert.match(source, /private static bridgeToken = '';/u);
-  assert.doesNotMatch(source, /#BridgeToken|bridgeTokenSetting|\.set\(token\)/u);
-  assert.match(source, /페이지 메모리에만 유지/u);
+  assert.doesNotMatch(`${source}\n${bootstrap}`, /#BridgeToken|bridgeTokenSetting|localStorage|sessionStorage|\.set\(token\)/u);
+  assert.doesNotMatch(source, /Perfetto connector 전용 token/u);
+  assert.match(bootstrap, /PERFETTO_BOOTSTRAP_PATH = '\/relu\/perfetto-bootstrap'/u);
+  assert.match(bootstrap, /method: 'POST'/u);
+  assert.match(bootstrap, /cache: 'no-store'/u);
+  assert.match(bootstrap, /endpoint: `ws:\/\/\$\{pageLocation\.hostname\}:\$\{pageLocation\.port\}\/perfetto\/ws`/u);
 });

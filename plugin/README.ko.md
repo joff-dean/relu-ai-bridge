@@ -26,16 +26,18 @@ barrel 수정은 필요 없다. 다만 이 플러그인은 upstream 기본 플�
 
 플러그인을 활성화하면 command palette에 다음 명령이 등록된다.
 
-- `RELU AI Bridge 연결`: token을 입력하고 loopback WebSocket에 연결한다.
+- `RELU AI Bridge 연결`: 같은 origin의 RELU local stack을 찾아 즉시 연결한다.
 - `RELU AI Bridge 연결 해제`: 자동 재연결을 중지하고 연결을 닫는다.
 - `현재 trace를 REF/DUT 세션에 연결`: session ID와 역할을 선택해 bridge에
   attach 요청을 보낸다.
 
-token은 `RELU AI Bridge 연결` command에서 입력하며 현재 Perfetto 페이지의
-JavaScript 메모리에만 둔다. localStorage나 Perfetto settings에는 쓰지 않으므로
-페이지 reload 뒤 다시 입력해야 한다. 같은 페이지에서 token을 입력한 뒤
-`RELU AI Bridge 자동 연결`이 켜져 있으면 새 trace를 열 때 자동 연결한다. 상태
-표시줄의 RELU 항목에서 연결 상태와 session/role을 확인할 수 있다.
+`scripts/perfetto/run-local-stack.sh`로 실행하면 플러그인은 고정된
+`POST /relu/perfetto-bootstrap`에서 runtime connector credential을 자동으로 받고,
+현재 Perfetto 페이지의 JavaScript 메모리에만 둔다. endpoint도 응답이나 설정에서
+받지 않고 현재 exact `http://127.0.0.1:<port>` origin의 `/perfetto/ws`로 파생한다.
+token 입력 UI, localStorage, sessionStorage, Perfetto token setting과 URL query는 없다.
+페이지 reload 때는 같은 runtime bootstrap에서 다시 받고, 런처 종료 시 credential도
+폐기된다. 상태 표시줄의 RELU 항목에서 연결 상태와 session/role을 확인할 수 있다.
 
 bridge의 durable session assignment는 같은 trace plugin instance의 WebSocket
 재연결 뒤에는 복원되지만 page reload나 trace 재오픈 뒤에는 상속되지
@@ -47,11 +49,16 @@ client ID에 포함하지 않는다.
 
 ## 보안 경계
 
-- endpoint는 `ws://127.0.0.1:<port>/perfetto/ws`만 허용한다.
-- 기본값은 `ws://127.0.0.1:5746/perfetto/ws`이다.
+- endpoint는 현재 UI와 같은 port의 `ws://127.0.0.1:<port>/perfetto/ws`만 사용한다.
+- local stack은 WebSocket을 내부 Bridge port로 전달하되 browser에는 같은 origin만
+  노출한다.
 - URL credential, query, fragment, `localhost`, LAN 주소, 외부 hostname은
   거부한다.
-- 전용 Perfetto connector token(`RELU_PERFETTO_CONNECTOR_TOKEN`)은 control/MCP token과 다르게 발급하며, source code·setting·localStorage에 저장하지 않고 현재 페이지 메모리에만 둔다.
+- 전용 Perfetto connector token은 실행마다 control/MCP token과 다르게 발급하며,
+  source code·setting·browser storage·URL·로그에 저장하지 않고 현재 페이지 메모리에만 둔다.
+- bootstrap은 exact Host/Origin과 same-origin Fetch Metadata를 요구하는 bounded POST이며
+  `no-store`로 응답한다. Browser가 보낸 trace 내용이나 모델 인자는 credential 발급
+  조건과 endpoint를 바꿀 수 없다.
 - token 원문은 WebSocket으로 전송하지 않는다. 양쪽 fresh 256-bit nonce, exact page
   Origin, plugin ID 및 client/trace descriptor에 domain-separated HMAC-SHA-256
   proof를 계산하는 데만 사용한다.
@@ -93,7 +100,7 @@ protocolVersion: "1.0"
 `id`는 성공·실패 response에 그대로 보존한다. 네트워크 단절은 500 ms부터 최대
 30초까지 exponential backoff로 재연결하며, 인증 거부는 자동 재시도하지 않는다.
 
-운영 상태 확인용 HTTP endpoint는 `GET http://127.0.0.1:5746/health`이며, trace
+별도 중앙 Bridge의 운영 상태 확인용 HTTP endpoint는 `GET http://127.0.0.1:5746/health`이며, trace
 요청과 응답은 위 WebSocket만 사용한다. Perfetto UI를 HTTPS origin으로 제공하면
 브라우저 mixed-content 정책이 `ws:`를 차단할 수 있으므로 사내 배포 가이드의
 loopback HTTP UI 실행 방식을 사용해야 한다.

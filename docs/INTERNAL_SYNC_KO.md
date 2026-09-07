@@ -472,6 +472,12 @@ Perfetto v58.2 build worker의 `python3` 또는 `EMSDK_PYTHON`은 3.10 이상이
 macOS ARM64 worker라면 Rosetta 2 또는 실행 가능한 Java runtime도 필요하다. CI image에서
 Java는 11 이상으로 버전을 고정하고 아래 스크립트의 사전 검사도 우회하지 않는다.
 
+공식 v58.2 통합본의 로컬 실사용 검증은 `run-local-stack.sh`로 수행한다. 단일 UI는
+기본 `10000`, REF/DUT 두 UI는 `--instances 2`를 사용한다. 이 런처는 같은 origin
+bootstrap으로 runtime Perfetto credential을 페이지 메모리에만 전달하므로 사용자에게
+token을 입력시키거나 회사 config에 credential을 기록하지 않는다. 종료 뒤 임시
+runtime directory가 남지 않았는지, 각 UI가 별도 client로 보이는지 함께 확인한다.
+
 최소 명령:
 
 ```bash

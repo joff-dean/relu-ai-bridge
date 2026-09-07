@@ -165,6 +165,11 @@ node /absolute/path/to/relu-ai-bridge/bin/relu-ai-bridge.mjs archive-ledger
 이 도구 계약은 공식 Perfetto `v58.2`와 RELU `v58` adapter만 지원한다. 다른 Perfetto
 기준선이나 이전 adapter alias는 자동 선택하거나 fallback하지 않는다.
 
+개발용 `run-local-stack.sh`에서는 플러그인이 동일 출처 bootstrap으로 자동 연결되므로
+사용자가 connector token을 입력하지 않는다. `--instances 2`로 띄운 REF/DUT UI는
+서로 다른 `clientId`로 같은 Bridge에 나타나며, 아래 session attach 계약은 그대로다.
+Runtime bootstrap은 MCP 도구·권한을 추가하지 않고 server-owned 도구 계약도 바꾸지 않는다.
+
 | Tool | 용도 | 변경 | 승인 |
 | --- | --- | --- | --- |
 | `perfetto_clients` | 연결된 탭·opaque trace key·배정 조회 | 없음 | 없음 |
