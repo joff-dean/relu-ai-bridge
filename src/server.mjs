@@ -13,6 +13,8 @@ import { BrowserBridge } from './bridge.mjs';
 import { McpService } from './mcp.mjs';
 import { PerfettoSessionStore } from './perfetto-store.mjs';
 import { PerfettoBroker } from './perfetto-broker.mjs';
+import { PerfettoAnalysisManager, createCodexAnalysisRunner } from './perfetto-analysis.mjs';
+import { PerfettoTools } from './perfetto-tools.mjs';
 import { ConnectorBroker } from './connectors.mjs';
 import { acceptWebSocket } from './websocket.mjs';
 import { errorMessage, readRequestBody, sendJson } from './utils.mjs';
@@ -84,11 +86,20 @@ export async function createApplication(options = {}) {
   const files = new FileTools(config, redactor);
   const commands = new CommandManager(config, redactor);
   const perfettoStore = new PerfettoSessionStore(config);
+  let perfettoAnalysis;
   let perfetto;
   let connectors;
   try {
+    perfettoAnalysis = new PerfettoAnalysisManager({
+      runner: options.perfettoAnalysis
+        ? createCodexAnalysisRunner(options.perfettoAnalysis)
+        : null,
+      audit,
+    });
     await Promise.all([sessions.initialize(), agents.initialize(), approvals.initialize(), perfettoStore.initialize(), audit.prune()]);
-    perfetto = new PerfettoBroker(config, perfettoStore, audit, approvals);
+    perfetto = new PerfettoBroker(config, perfettoStore, audit, approvals, {
+      analysis: perfettoAnalysis,
+    });
     connectors = new ConnectorBroker(config, audit);
     await connectors.initialize();
   } catch (error) {
@@ -98,7 +109,23 @@ export async function createApplication(options = {}) {
     throw error;
   }
   const bridge = new BrowserBridge(config, sessions, agents, approvals, audit);
-  const context = { config, redactor, audit, sessions, agents, approvals, files, commands, bridge, perfetto, perfettoStore, connectors };
+  const context = { config, redactor, audit, sessions, agents, approvals, files, commands, bridge, perfetto, perfettoStore, connectors, perfettoAnalysis };
+  const analysisPerfettoTools = new PerfettoTools(context);
+  perfettoAnalysis.attach({
+    bridge: perfetto,
+    focusHandler: (job, evidence, operationId) => analysisPerfettoTools.call(
+      'perfetto_select_area',
+      {
+        ...(evidence.target === 'current'
+          ? {clientId: job.clientId}
+          : {sessionId: job.sessionId, role: evidence.target}),
+        start: evidence.startNs,
+        end: evidence.endNs,
+        trackUris: evidence.trackUris,
+        operationId,
+      },
+    ),
+  });
   const mcp = new McpService(context);
   context.mcp = mcp;
   const pruneRetention = () => Promise.all([sessions.prune(), audit.prune()]);
@@ -136,6 +163,7 @@ export async function createApplication(options = {}) {
         roots: config.roots.length,
         uptimeSeconds: Math.floor(process.uptime()),
         perfettoClients: perfetto.listClients().length,
+        perfettoAnalysis: perfettoAnalysis.enabled,
         connectorSessions: connectors.listSessions().length,
       }, headers);
     }

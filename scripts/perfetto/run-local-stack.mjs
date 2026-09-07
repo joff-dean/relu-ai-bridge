@@ -139,6 +139,8 @@ async function main() {
   const connectorToken = randomCredential('relu_perfetto_runtime_');
   const instanceId = crypto.randomBytes(16).toString('hex');
   const runtimeFile = perfettoRuntimeFile();
+  const proxyPath = fileURLToPath(new URL('./codex-mcp-proxy.mjs', import.meta.url));
+  const analysisSchemaPath = fileURLToPath(new URL('./analysis-output.schema.json', import.meta.url));
   const origins = Array.from({length: options.instances}, (_, index) =>
     `http://${LOOPBACK_HOST}:${options.uiPort + index}`);
   const config = {
@@ -191,7 +193,7 @@ async function main() {
     const registration = await ensureCodexRegistration({
       codexCli: options.codexCli,
       nodePath: perfettoNode,
-      proxyPath: fileURLToPath(new URL('./codex-mcp-proxy.mjs', import.meta.url)),
+      proxyPath,
     });
     process.stdout.write(registration.restartRequired
       ? 'Codex MCP registered; restart Codex once to load relu-perfetto\n'
@@ -202,6 +204,14 @@ async function main() {
   try {
     app = await createApplication({
       configPath,
+      perfettoAnalysis: options.codexCli ? {
+        codexCli: options.codexCli,
+        nodePath: perfettoNode,
+        proxyPath,
+        schemaPath: analysisSchemaPath,
+        cwd: path.join(runtimeDir, 'analysis-workspace'),
+        outputDir: path.join(runtimeDir, 'analysis-output'),
+      } : null,
       environment: {
         ...process.env,
         RELU_AI_BRIDGE_TOKEN: controlToken,

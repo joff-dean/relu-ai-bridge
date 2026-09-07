@@ -1,17 +1,20 @@
 // Copyright (c) 2026. All rights reserved.
 
 import {z} from 'zod';
+import m from 'mithril';
 import type {App} from '../../public/app';
 import type {PerfettoPlugin} from '../../public/plugin';
 import type {Setting} from '../../public/settings';
 import type {Trace} from '../../public/trace';
 import {type TraceRole} from '../../perfetto_adapter/protocol';
+import type {AnalysisJob} from '../../perfetto_adapter/protocol';
 import {PerfettoV58Adapter} from '../../perfetto_adapter/v58';
 import {loadPerfettoBootstrap} from './bootstrap';
 import {
   PerfettoBridgeClient,
   type BridgeConnectionStatus,
 } from './bridge_client';
+import {AnalysisPanel} from './analysis_panel';
 
 const PLUGIN_ID = 'io.company.RELUPerfettoBridge';
 const PLUGIN_VERSION = '0.7.0';
@@ -34,6 +37,8 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
     state: 'disconnected',
     reconnectAttempt: 0,
   };
+  private readonly analysisJobs = new Map<string, AnalysisJob>();
+  private analysisError?: string;
 
   static onActivate(app: App): void {
     ReluPerfettoBridgePlugin.autoConnectSetting = app.settings.register({
@@ -52,6 +57,7 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
     this.adapter = new PerfettoV58Adapter(trace);
     this.registerCommands(trace);
     this.registerStatusItem(trace);
+    this.registerAnalysisPanel(trace);
 
     trace.trash.defer(() => {
       this.bridge?.dispose();
@@ -76,6 +82,13 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
       name: 'RELU AI Bridge 연결',
       source: COMMAND_SOURCE,
       callback: async () => this.connect(),
+    });
+
+    trace.commands.registerCommand({
+      id: `${PLUGIN_ID}.OpenAnalysis`,
+      name: 'RELU 분석 패널 열기',
+      source: COMMAND_SOURCE,
+      callback: () => trace.sidePanel.showTab(`${PLUGIN_ID}#Analysis`),
     });
 
     trace.commands.registerCommand({
@@ -106,6 +119,50 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
         );
       },
     });
+  }
+
+  private registerAnalysisPanel(trace: Trace): void {
+    trace.sidePanel.registerTab({
+      uri: `${PLUGIN_ID}#Analysis`,
+      title: 'RELU 분석',
+      icon: 'query_stats',
+      render: () => m(AnalysisPanel, {
+        connected: this.status.state === 'connected',
+        available: this.bridge?.isAnalysisAvailable() === true,
+        jobs: [...this.analysisJobs.values()].sort((a, b) =>
+          b.createdAt.localeCompare(a.createdAt)),
+        error: this.analysisError,
+        onStart: () => this.startSelectionAnalysis(),
+        onCancel: (jobId: string) => this.runPanelAction(() =>
+          this.requireBridge().cancelAnalysis(jobId)),
+        onCancelAll: () => this.runPanelAction(() =>
+          this.requireBridge().cancelAllAnalyses()),
+        onFocus: (jobId: string, findingIndex: number, evidenceIndex: number) =>
+          this.runPanelAction(() => this.requireBridge().focusAnalysisEvidence(
+            jobId,
+            findingIndex,
+            evidenceIndex,
+          )),
+      }),
+    });
+  }
+
+  private startSelectionAnalysis(): void {
+    this.runPanelAction(() => {
+      const selection = this.adapter?.getAreaSelection();
+      if (!selection) throw new Error('타임라인에서 분석할 영역을 먼저 선택하세요.');
+      this.requireBridge().requestSelectionAnalysis(selection);
+    });
+  }
+
+  private runPanelAction(action: () => void): void {
+    try {
+      this.analysisError = undefined;
+      action();
+    } catch (error) {
+      this.analysisError = error instanceof Error ? error.message : '요청을 처리하지 못했습니다.';
+    }
+    this.trace?.raf.scheduleFullRedraw();
   }
 
   private registerStatusItem(trace: Trace): void {
@@ -162,6 +219,11 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
       adapter: this.adapter,
       onStatus: (status) => {
         this.status = status;
+        this.trace?.raf.scheduleFullRedraw();
+      },
+      onAnalysisJob: (job) => {
+        this.analysisJobs.set(job.id, job);
+        this.analysisError = undefined;
         this.trace?.raf.scheduleFullRedraw();
       },
     });

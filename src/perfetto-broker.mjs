@@ -275,6 +275,7 @@ export class PerfettoBroker {
     this.pending = new Map();
     this.connections = new Set();
     this.assignmentMutex = new AsyncMutex();
+    this.analysis = options.analysis ?? null;
     const requestedAuthTimeoutMs = Number(options.authTimeoutMs ?? DEFAULT_AUTH_TIMEOUT_MS);
     this.authTimeoutMs = Number.isSafeInteger(requestedAuthTimeoutMs) && requestedAuthTimeoutMs > 0
       ? Math.min(DEFAULT_AUTH_TIMEOUT_MS, requestedAuthTimeoutMs)
@@ -426,6 +427,7 @@ export class PerfettoBroker {
             accepted: true,
             connectionId: id,
             heartbeatMs: 20_000,
+            ...(this.analysis?.enabled === true ? {analysisAvailable: true} : {}),
           });
           if (attachment) {
             const role = attachment.refClientId === id ? 'ref' : 'dut';
@@ -485,6 +487,7 @@ export class PerfettoBroker {
       this.connections.delete(connection);
       if (!client || this.clients.get(client.id)?.connection !== connection) return;
       this.clients.delete(client.id);
+      this.analysis?.cancelClient(client.id);
       for (const [requestId, pending] of this.pending) {
         if (pending.clientId !== client.id || pending.connection !== connection) continue;
         clearTimeout(pending.timer);
@@ -530,6 +533,27 @@ export class PerfettoBroker {
       const role = message.payload?.role === 'REF' ? 'ref' : message.payload?.role === 'DUT' ? 'dut' : null;
       if (!role) throw new Error('Session attach role must be REF or DUT');
       await this.requestAttach(sessionId, role, client.id, 'plugin');
+      return;
+    }
+    if (message.name === 'analysis.start_requested') {
+      this.analysis?.start(client, message.payload);
+      if (!this.analysis?.enabled) throw new Error('Codex background analysis is not configured');
+      return;
+    }
+    if (message.name === 'analysis.cancel_requested') {
+      this.analysis?.cancel(client, message.payload?.jobId);
+      return;
+    }
+    if (message.name === 'analysis.cancel_all_requested') {
+      this.analysis?.cancelAll(client);
+      return;
+    }
+    if (message.name === 'analysis.focus_requested') {
+      await this.analysis?.focus(client, message.payload);
+      return;
+    }
+    if (message.name === 'trace.closing') {
+      this.analysis?.cancelClient(client.id, 'Perfetto trace closed');
       return;
     }
     throw new Error('Unsupported Perfetto event');
@@ -784,6 +808,7 @@ export class PerfettoBroker {
   }
 
   shutdown() {
+    this.analysis?.shutdown();
     clearInterval(this.pingTimer);
     for (const connection of this.connections) connection.close(1001, 'server shutdown');
     for (const pending of this.pending.values()) {

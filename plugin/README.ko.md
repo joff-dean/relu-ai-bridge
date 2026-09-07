@@ -28,8 +28,16 @@ barrel 수정은 필요 없다. 다만 이 플러그인은 upstream 기본 플�
 
 - `RELU AI Bridge 연결`: 같은 origin의 RELU local stack을 찾아 즉시 연결한다.
 - `RELU AI Bridge 연결 해제`: 자동 재연결을 중지하고 연결을 닫는다.
+- `RELU 분석 패널 열기`: 기본 닫힘인 우측 분석 패널을 연다. 상단 side-panel 버튼으로
+  다시 숨길 수 있다.
 - `현재 trace를 REF/DUT 세션에 연결`: session ID와 역할을 선택해 bridge에
   attach 요청을 보낸다.
+
+분석 패널의 `현재 선택 분석`은 클릭 순간의 area selection을 복사해 background Codex
+job으로 보낸다. 이후 timeline zoom/pan/selection 변경이나 panel hide는 분석 범위를
+바꾸지 않는다. `분석 중지`와 `모두 중지`는 runner 및 후속 query를 중단하고 늦은 결과를
+폐기한다. 완료된 finding의 evidence button은 current/REF/DUT trace binding을 server에서
+재검사한 후에만 해당 연결 탭을 선택·focus한다.
 
 `scripts/perfetto/run-local-stack.sh`로 실행하면 플러그인은 고정된
 `POST /relu/perfetto-bootstrap`에서 runtime connector credential을 자동으로 받고,
@@ -84,9 +92,13 @@ server -> client: auth_challenge_ack (fresh server nonce, server proof)
 client -> server: auth_response (client proof, client/trace descriptor; raw token 없음)
 server -> client: hello_ack
 client -> server: response, event
-server -> client: request, ping
+server -> client: request, ping, analysis_job
 protocolVersion: "1.0"
 ```
+
+분석 관련 client event는 `analysis.start_requested`, `analysis.cancel_requested`,
+`analysis.cancel_all_requested`, `analysis.focus_requested`로 고정된다. 임의 CLI command,
+prompt template, URL 또는 script를 browser message로 전달할 수 없다.
 
 지원 request method:
 

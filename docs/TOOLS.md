@@ -172,7 +172,16 @@ Runtime bootstrap은 MCP 도구·권한을 추가하지 않고 server-owned 도�
 공식 Codex가 발견되면 launcher는 user-scope `relu-perfetto` stdio MCP를 idempotent하게
 등록한다. 최초 한 번 Codex를 재시작한 뒤 새 task에서 “연결된 Perfetto 목록을 보여줘”,
 “REF와 DUT를 attach하고 차이를 분석해줘”처럼 요청하면 아래 도구가 호출된다. Perfetto
-화면 안에 AI prompt를 추가하지 않으며 여러 UI는 각자의 `clientId`로 구분된다.
+우측의 `RELU 분석` side panel은 기본 닫힘이며 상단 toggle이나 command palette로만 연다.
+여러 UI는 각자의 `clientId`로 구분된다.
+
+패널의 `현재 선택 분석`은 선택을 다시 읽는 장기 request가 아니다. 클릭 시점의 exact
+`traceBinding`, `startNs`, `endNs`, `trackUris`를 job에 복사하고 이후 SQL은 이 범위를
+명시적으로 사용한다. 따라서 사용자가 분석 중 화면을 자유롭게 조작해도 job 범위는
+변하지 않는다. Panel hide는 작업을 계속하고 `분석 중지`/`모두 중지`만 runner를 취소한다.
+v58.2에는 실행 중 query 취소 API가 없으므로 이미 시작된 SQL은 반환 뒤 결과를 폐기하며
+후속 SQL은 실행하지 않는다. 같은 Perfetto client의 query는 직렬화하고 서로 다른 REF/DUT
+client는 병렬 조회할 수 있다.
 
 | Tool | 용도 | 변경 | 승인 |
 | --- | --- | --- | --- |
@@ -196,6 +205,11 @@ Runtime bootstrap은 MCP 도구·권한을 추가하지 않고 server-owned 도�
 8. 새 `operationId`와 `applySelection:true`로 DUT 반영
 
 `perfetto_select_area`와 generic `execute(select_range)`는 같은 Perfetto trace resource와 `operationId` 원장을 공유한다. 같은 ID의 중복 dispatch, reconnect·process restart 우회가 차단되며 timeout은 `/admin/`에서 실제 선택 상태를 확인하고 판정할 때까지 ambiguous로 남는다.
+
+분석 결과의 evidence button도 새 `operationId`를 만든 뒤 이 동일한 mutation 경로를
+사용한다. Model이 반환한 timestamp는 server가 해당 current/REF/DUT trace 범위 안인지
+검사하고, panel text는 실행 가능한 URL·script가 아니라 Mithril text와 고정 callback으로만
+렌더링한다.
 
 `perfetto_align`은 `applySelection:false` preview에는 `operationId`가 필요 없다. 기본값을 포함해 DUT 선택을 반영할 때는 필수이며, operation을 SQL/DTW 전에 원장에 선점한다. 따라서 동일 ID의 concurrent/completed 호출은 expensive REF/DUT query를 다시 실행하지 않고, 재시작 뒤 raw 결과가 없는 completed ID도 재실행하지 않는다.
 

@@ -55,6 +55,71 @@ class FakeSocket {
 }
 
 describe('PerfettoBridgeClient', () => {
+  test('분석 요청·상태·중지·근거 focus를 인증된 연결에서만 전달한다', async () => {
+    const socket = new FakeSocket();
+    const jobs: unknown[] = [];
+    const client = new PerfettoBridgeClient({
+      endpoint: 'ws://127.0.0.1:5746/perfetto/ws',
+      token: TOKEN,
+      origin: ORIGIN,
+      clientId: 'client-1',
+      pluginId: PLUGIN_ID,
+      pluginVersion: '0.7.0',
+      adapter: createAdapter(),
+      socketFactory: () => socket,
+      authCrypto: TEST_AUTH_CRYPTO,
+      onAnalysisJob: (job) => jobs.push(job),
+    });
+    expect(() => client.requestSelectionAnalysis({
+      startNs: '1', endNs: '2', trackUris: [],
+    })).toThrow(/인증 연결/u);
+    client.connect();
+    socket.open();
+    await sendValidServerProof(socket);
+    socket.receive({
+      type: 'hello_ack', protocolVersion: '1.0', accepted: true,
+      analysisAvailable: true,
+    });
+    expect(client.isAnalysisAvailable()).toBe(true);
+
+    const requestId = client.requestSelectionAnalysis({
+      startNs: '1', endNs: '2', trackUris: ['/sched_cpu0'],
+    });
+    expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
+      type: 'event',
+      name: 'analysis.start_requested',
+      payload: {
+        requestId,
+        selection: {startNs: '1', endNs: '2', trackUris: ['/sched_cpu0']},
+      },
+    });
+    socket.receive({
+      type: 'analysis_job',
+      job: {
+        id: 'analysis_0123456789abcdef', requestId, status: 'running',
+        createdAt: '2026-09-08T00:00:00.000Z', updatedAt: '2026-09-08T00:00:01.000Z',
+        selection: {startNs: '1', endNs: '2', trackUris: []},
+        progress: '분석 중', report: null, error: null,
+      },
+    });
+    expect(jobs).toHaveLength(1);
+
+    client.cancelAnalysis('analysis_0123456789abcdef');
+    expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({
+      type: 'event', name: 'analysis.cancel_requested',
+      payload: {jobId: 'analysis_0123456789abcdef'},
+    });
+    client.cancelAllAnalyses();
+    expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
+      type: 'event', name: 'analysis.cancel_all_requested',
+    });
+    client.focusAnalysisEvidence('analysis_0123456789abcdef', 0, 0);
+    expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({
+      type: 'event', name: 'analysis.focus_requested',
+      payload: {jobId: 'analysis_0123456789abcdef', findingIndex: 0, evidenceIndex: 0},
+    });
+  });
+
   test('server proof 전에는 token/trace를 보내지 않고 상호 인증 뒤 request에 응답한다', async () => {
     const socket = new FakeSocket();
     const adapter = createAdapter();

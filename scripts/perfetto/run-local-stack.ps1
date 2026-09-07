@@ -109,5 +109,8 @@ $Arguments = @(
     '--upstream-port', $UpstreamPort.ToString(),
     '--bridge-port', $BridgePort.ToString()
 )
+if ($null -ne $VerifiedCodex) {
+    $Arguments += @('--codex-cli', $VerifiedCodex)
+}
 & $PerfettoNode @Arguments
 exit $LASTEXITCODE
