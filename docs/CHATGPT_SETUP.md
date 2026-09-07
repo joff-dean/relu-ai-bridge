@@ -73,6 +73,28 @@ extension ID와 allowlist, Bridge 재시작 여부부터 확인한다.
 
 ## 2A. Local Codex/ChatGPT desktop 연결
 
+공식 v58.2 개발 통합본은 별도 token 설정 대신 아래 런처를 사용한다.
+
+```bash
+scripts/perfetto/run-local-stack.sh /absolute/work/perfetto-v58.2 --instances 2
+```
+
+macOS launcher는 실행 중인 공식 ChatGPT bundle의 고정 Codex 경로와 signing identity를
+확인한다. Windows launcher는 고정 설치 후보의 유효한 Authenticode 서명과
+`OpenAI OpCo, LLC` publisher를 확인하고, SID-bound `Global\` mutex 안에서만 공식 CLI를
+실행한다. 둘 다 `codex mcp get/add`로 `relu-perfetto` stdio 항목을 조회·추가·재조회하며
+다른 command가 같은 이름을 선점했으면 덮어쓰지 않는다. 등록 command에는 bundled
+Perfetto Node와 검토된 local proxy의 절대 경로만 들어가고 credential은 들어가지 않는다.
+
+Control credential은 런처가 생성한 사용자 전용 임시 descriptor(Windows ACL 경계,
+POSIX 0700 directory/0600 file)에만 존재한다. Proxy는 live launcher PID와 exact
+`127.0.0.1` endpoint, `/health` 제품/version/auth를 확인한 뒤 bearer를 사용하고 MCP
+session을 종료 시 닫는다. 런처가 끝나면 자신이 소유한 descriptor만 제거한다. 최초
+등록 후 Codex를 한 번 재시작해야 하며, 이미 열린 task에는 도구가 hot-load되지 않는다.
+
+아래 수동 HTTP 설정은 local stack이 아닌 장기 실행 중앙 Bridge를 별도로 연결할 때만
+사용한다.
+
 `~/.codex/config.toml` 또는 trusted project의 `.codex/config.toml`에 다음을 추가한다.
 
 ```toml
@@ -229,4 +251,10 @@ control token과 달라야 한다. EndViewer는 중앙 session 목록에 나타�
 
 ### Perfetto client가 0개
 
-MCP 연결과 Perfetto WebSocket 연결은 별개다. `RELU AI Bridge 연결` command에서 control token이 아닌 전용 `RELU_PERFETTO_CONNECTOR_TOKEN` 값을 입력한다. 값은 페이지 메모리에만 유지되어 reload 후 다시 입력해야 하며 raw token은 wire에 전송되지 않는다. Plugin은 loopback server의 fresh HMAC proof를 확인한 뒤에만 trace descriptor를 공개한다. 사내 Perfetto origin도 `perfetto.allowedOrigins`에 exact entry로 추가해야 한다.
+MCP 연결과 Perfetto WebSocket 연결은 별개다. `run-local-stack.sh`/`.ps1`로 연 공식
+v58.2 통합본은 same-origin bootstrap으로 자동 연결되며 token 입력이 없다. 상태가
+`RELU: 연결됨`인지 확인하고 새 Codex task에서 `relu-perfetto`가 enabled인지 확인한다.
+기존의 별도 중앙 Bridge와 임의 사내 origin을 수동 실행한 경우에만 `RELU AI Bridge 연결`
+command에 control token이 아닌 전용 `RELU_PERFETTO_CONNECTOR_TOKEN`을 입력하고 exact
+`perfetto.allowedOrigins`를 설정한다. Plugin은 어느 경로에서도 raw token을 wire에
+전송하지 않고 fresh HMAC server proof를 확인한 뒤에만 trace descriptor를 공개한다.

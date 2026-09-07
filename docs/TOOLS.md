@@ -169,6 +169,10 @@ node /absolute/path/to/relu-ai-bridge/bin/relu-ai-bridge.mjs archive-ledger
 사용자가 connector token을 입력하지 않는다. `--instances 2`로 띄운 REF/DUT UI는
 서로 다른 `clientId`로 같은 Bridge에 나타나며, 아래 session attach 계약은 그대로다.
 Runtime bootstrap은 MCP 도구·권한을 추가하지 않고 server-owned 도구 계약도 바꾸지 않는다.
+공식 Codex가 발견되면 launcher는 user-scope `relu-perfetto` stdio MCP를 idempotent하게
+등록한다. 최초 한 번 Codex를 재시작한 뒤 새 task에서 “연결된 Perfetto 목록을 보여줘”,
+“REF와 DUT를 attach하고 차이를 분석해줘”처럼 요청하면 아래 도구가 호출된다. Perfetto
+화면 안에 AI prompt를 추가하지 않으며 여러 UI는 각자의 `clientId`로 구분된다.
 
 | Tool | 용도 | 변경 | 승인 |
 | --- | --- | --- | --- |

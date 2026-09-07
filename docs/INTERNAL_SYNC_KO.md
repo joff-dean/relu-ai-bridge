@@ -477,12 +477,18 @@ Java는 11 이상으로 버전을 고정하고 아래 스크립트의 사전 검
 bootstrap으로 runtime Perfetto credential을 페이지 메모리에만 전달하므로 사용자에게
 token을 입력시키거나 회사 config에 credential을 기록하지 않는다. 종료 뒤 임시
 runtime directory가 남지 않았는지, 공유 builder를 사용하는 각 UI origin이 별도
-client로 보이는지 함께 확인한다.
+client로 보이는지 함께 확인한다. 공식 Codex가 있으면 user-scope `relu-perfetto`가
+bundled Perfetto Node + RELU stdio proxy의 exact 절대 경로로 등록되며, 최초 등록 뒤
+Codex를 한 번 재시작한다. Control credential은 user-private runtime descriptor에만
+있고 launcher 종료 시 instance ID가 맞는 파일만 제거된다.
 
 Windows 반입본은 WSL/Linux CI에서 copy overlay와 build를 완료한 뒤 native PowerShell의
 `scripts\perfetto\run-local-stack.ps1 C:\work\perfetto-v58.2 -Instances 2`로
 실행한다. PowerShell launcher도 exact public commit, managed overlay marker, 기본 plugin
 등록과 bundled `ui\node.exe`를 확인하며 외부 `PATH`의 Node를 실행하지 않는다.
+Codex 자동 발견은 고정 설치 후보의 Authenticode와 `OpenAI OpCo, LLC` publisher를
+검증하고, SID-bound `Global\` mutex 안에서 공식 CLI의 get/add/get을 수행한다. 같은
+MCP 이름의 다른 등록이나 managed policy 충돌은 덮어쓰거나 우회하지 않는다.
 
 최소 명령:
 

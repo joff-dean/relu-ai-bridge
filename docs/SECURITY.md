@@ -79,6 +79,13 @@ Perfetto와 generic browser service token은 최소 24자이며 audience마다 �
 Token을 Git, config JSON, URL, `localStorage`, transcript와 audit에 넣지 않는다. Perfetto
 local stack은 실행마다 서로 다른 control/connector token을 메모리에 만들고 종료 시
 0700 임시 data directory와 함께 폐기한다. 임시 config JSON에도 token 값은 쓰지 않는다.
+Codex 자동 연결을 선택한 launcher는 control token이 포함된 bounded descriptor를 OS의
+사용자 전용 temp 아래 0700 directory/0600 regular file(POSIX) 또는 사용자 temp ACL
+경계(Windows)에 원자적으로 만들고, 자신의 random instance ID가 일치할 때만 종료 시
+삭제한다. Descriptor path는 Codex 설정에 기록하지 않으며 stdio proxy가 같은 고정 규칙으로
+찾는다. Proxy는 launcher PID 생존과 exact loopback MCP URL, `/health`의 제품/version 및
+Bearer mode를 검증한 후에만 credential을 전송한다. Stale·과대·symlink·다른 사용자
+descriptor는 거부한다.
 Plugin은 same-origin bootstrap으로 받은 전용 token을 현재 페이지의 JavaScript 메모리에만 둔다. Admin UI는 control
 token을 해당 탭의 `sessionStorage`에, 선택형 Chrome companion은
 `chrome.storage.session`에만 둔다. Companion 저장 token은 HMAC key로만 사용되고 bearer
@@ -277,6 +284,10 @@ Bridge의 실제 `configPath`와 `dataDir` 전체는 approved root와 겹치더�
   마지막 조회와 add 사이에 같은 OS account의 외부 writer가 동일 이름을 새로 만드는
   race는 원자적으로 막을 수 없다. 검출한 기존/변경 등록은 보존하지만, 배포 automation은
   EndViewer 최초 등록과 별도 Codex MCP 쓰기를 동시에 실행하지 않는다.
+- Perfetto local stack의 `relu-perfetto` 등록도 공식 CLI의 조회/add/재조회와 exact
+  stdio command/args/environment 비교를 사용한다. Windows 자동 discovery는 고정 설치
+  후보, 유효 Authenticode와 공식 OpenAI publisher만 허용하며 SID-bound `Global\` mutex로
+  직렬화한다. 기존의 다른 등록이나 exclusive managed MCP 정책은 보존하고 우회하지 않는다.
 - 등록 command는 회사가 관리하는 안정된 EndViewer 절대 경로와 내부 stdio mode로
   제한한다. Binary 서명과 설치 경로 ACL을 함께 검증한다.
 - Exclusive managed MCP가 user 등록을 막으면 이를 우회하지 않는다. IT가 signed command를

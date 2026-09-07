@@ -8,6 +8,12 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import {fileURLToPath} from 'node:url';
+import {ensureCodexRegistration} from '../../src/codex-registration.mjs';
+import {
+  perfettoRuntimeFile,
+  publishPerfettoRuntime,
+  removePerfettoRuntime,
+} from '../../src/perfetto-codex-runtime.mjs';
 import {createPerfettoLocalProxy} from '../../src/perfetto-local-stack.mjs';
 import {createApplication} from '../../src/server.mjs';
 
@@ -33,6 +39,7 @@ export function parseLocalStackArgs(argv) {
     uiPort: 10_000,
     upstreamPort: 11_000,
     bridgePort: 5_746,
+    codexCli: null,
   };
   for (let index = 1; index < argv.length; index += 1) {
     const option = argv[index];
@@ -45,6 +52,9 @@ export function parseLocalStackArgs(argv) {
       result.upstreamPort = parsePositiveInteger(value, option);
     } else if (option === '--bridge-port') {
       result.bridgePort = parsePositiveInteger(value, option);
+    } else if (option === '--codex-cli') {
+      if (typeof value !== 'string' || !path.isAbsolute(value)) throw new Error(`${option} requires an absolute path`);
+      result.codexCli = path.resolve(value);
     } else {
       throw new Error(`Unsupported option: ${option}`);
     }
@@ -127,6 +137,8 @@ async function main() {
   const configPath = path.join(runtimeDir, 'config.json');
   const controlToken = randomCredential('relu_runtime_');
   const connectorToken = randomCredential('relu_perfetto_runtime_');
+  const instanceId = crypto.randomBytes(16).toString('hex');
+  const runtimeFile = perfettoRuntimeFile();
   const origins = Array.from({length: options.instances}, (_, index) =>
     `http://${LOOPBACK_HOST}:${options.uiPort + index}`);
   const config = {
@@ -170,6 +182,22 @@ async function main() {
     flag: 'wx',
   });
 
+  const perfettoNode = path.join(
+    options.perfettoDir,
+    'ui',
+    process.platform === 'win32' ? 'node.exe' : 'node',
+  );
+  if (options.codexCli) {
+    const registration = await ensureCodexRegistration({
+      codexCli: options.codexCli,
+      nodePath: perfettoNode,
+      proxyPath: fileURLToPath(new URL('./codex-mcp-proxy.mjs', import.meta.url)),
+    });
+    process.stdout.write(registration.restartRequired
+      ? 'Codex MCP registered; restart Codex once to load relu-perfetto\n'
+      : 'Codex MCP registration already matches relu-perfetto\n');
+  }
+
   let app;
   try {
     app = await createApplication({
@@ -192,17 +220,22 @@ async function main() {
     stopping = true;
     await Promise.allSettled(proxies.map((proxy) => proxy.close()));
     await Promise.allSettled(children.map(stopChild));
+    await removePerfettoRuntime(instanceId, runtimeFile).catch(() => {});
     await app.close().catch(() => {});
     await fs.rm(runtimeDir, {recursive: true, force: true}).catch(() => {});
   };
 
   try {
     await app.listen();
-    const perfettoNode = path.join(
-      options.perfettoDir,
-      'ui',
-      process.platform === 'win32' ? 'node.exe' : 'node',
-    );
+    await publishPerfettoRuntime({
+      version: 1,
+      instanceId,
+      pid: process.pid,
+      bridgeUrl: `http://${LOOPBACK_HOST}:${options.bridgePort}/mcp`,
+      bridgeVersion: '0.7.0',
+      token: controlToken,
+      createdAt: new Date().toISOString(),
+    }, runtimeFile);
     const child = spawn(
       perfettoNode,
       [

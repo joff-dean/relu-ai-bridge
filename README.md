@@ -348,8 +348,12 @@ scripts/perfetto/run-local-stack.sh /absolute/work/perfetto-v58.2
 `/perfetto/ws`를 같은 origin으로 제공한다. 실행할 때마다 control/Perfetto credential을
 서로 다르게 생성하고, 플러그인은 고정된 same-origin POST bootstrap에서 Perfetto
 credential만 받아 페이지 메모리에 둔다. 따라서 토큰 입력·URL query·browser storage가
-필요 없고, 런처 종료 시 임시 config/data와 credential도 제거된다. 기존의 별도
-Bridge 운영 설정은 위 중앙 bridge 빠른 시작 절차를 계속 사용한다.
+필요 없다. 공식 Codex가 설치된 장비에서는 런처가 공식 CLI로 user-scope
+`relu-perfetto` stdio MCP를 조회·등록한다. stdio 중계기는 사용자 전용 임시 runtime
+descriptor에서 control credential을 읽으므로 Codex 설정, 명령 인자, 화면에 token을
+넣지 않는다. 최초 등록 뒤 Codex를 한 번 재시작하고 새 task에서 바로 분석을 요청한다.
+런처 종료 시 임시 config/data, descriptor와 credential도 제거된다. 기존의 별도 Bridge
+운영 설정은 위 중앙 bridge 빠른 시작 절차를 계속 사용한다.
 
 REF/DUT처럼 여러 UI가 필요하면 Bridge 하나에 여러 instance를 띄운다.
 
@@ -368,7 +372,8 @@ Windows PowerShell에서는 검증된 overlay와 exact v58.2 checkout을 지정�
 `5746`을 사용한다. 각 공개 origin은 browser storage와 client ID가 분리된다. 필요하면 `--ui-port`, `--upstream-port`, `--bridge-port`로 서로
 겹치지 않는 base port를 지정한다. 기존 방식의 분리 실행이 필요한 진단에는
 `run-dev-server.sh`를 사용할 수 있지만, 동일 출처 bootstrap이 없으므로 자동 연결
-경로가 아니다.
+경로가 아니다. 같은 Windows 계정의 모든 Codex project에 user-scope 항목이 보이므로
+프로젝트별 격리가 필요하면 조직 managed MCP 정책으로 제한한다.
 
 개발 중 plugin/adapter source를 바꾼 뒤에는 변경을 개발 브랜치에 커밋하고
 `scripts/perfetto/integrate.sh --mode copy --refresh /absolute/work/perfetto-v58.2`로
