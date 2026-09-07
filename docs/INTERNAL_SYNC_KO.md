@@ -479,6 +479,11 @@ token을 입력시키거나 회사 config에 credential을 기록하지 않는�
 runtime directory가 남지 않았는지, 공유 builder를 사용하는 각 UI origin이 별도
 client로 보이는지 함께 확인한다.
 
+Windows 반입본은 WSL/Linux CI에서 copy overlay와 build를 완료한 뒤 native PowerShell의
+`scripts\perfetto\run-local-stack.ps1 C:\work\perfetto-v58.2 -Instances 2`로
+실행한다. PowerShell launcher도 exact public commit, managed overlay marker, 기본 plugin
+등록과 bundled `ui\node.exe`를 확인하며 외부 `PATH`의 Node를 실행하지 않는다.
+
 최소 명령:
 
 ```bash

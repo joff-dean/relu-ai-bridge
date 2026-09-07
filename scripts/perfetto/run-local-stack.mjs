@@ -198,9 +198,18 @@ async function main() {
 
   try {
     await app.listen();
+    const perfettoNode = path.join(
+      options.perfettoDir,
+      'ui',
+      process.platform === 'win32' ? 'node.exe' : 'node',
+    );
     const child = spawn(
-      path.join(options.perfettoDir, 'ui', 'run-dev-server'),
+      perfettoNode,
       [
+        path.join(options.perfettoDir, 'ui', 'build.mjs'),
+        '--only-wasm-memory64',
+        '--serve',
+        '--watch',
         '--serve-host', LOOPBACK_HOST,
         '--serve-port', String(options.upstreamPort),
         '--bundle',

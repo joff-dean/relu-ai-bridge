@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
 import http from 'node:http';
 import net from 'node:net';
 import test from 'node:test';
@@ -183,4 +184,21 @@ test('local stack supports multiple non-overlapping Perfetto instances', () => {
     () => parseLocalStackArgs(['/work/perfetto', '--instances', '9']),
     /at most 8/u,
   );
+});
+
+test('launchers use the bundled Perfetto Node runtime and pin the Windows baseline', async () => {
+  const launcher = await fs.readFile(
+    new URL('../scripts/perfetto/run-local-stack.mjs', import.meta.url),
+    'utf8',
+  );
+  const powershell = await fs.readFile(
+    new URL('../scripts/perfetto/run-local-stack.ps1', import.meta.url),
+    'utf8',
+  );
+  assert.match(launcher, /process\.platform === 'win32' \? 'node\.exe' : 'node'/u);
+  assert.match(launcher, /path\.join\(options\.perfettoDir, 'ui', 'build\.mjs'\)/u);
+  assert.match(launcher, /shell: false/u);
+  assert.match(powershell, /add693d8b338ba9599dbcbc3e300b1ab8c000897/u);
+  assert.match(powershell, /ui\\node\.exe/u);
+  assert.doesNotMatch(powershell, /Invoke-Expression|Start-Process/u);
 });

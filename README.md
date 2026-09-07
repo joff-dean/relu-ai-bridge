@@ -357,6 +357,13 @@ REF/DUT처럼 여러 UI가 필요하면 Bridge 하나에 여러 instance를 띄�
 scripts/perfetto/run-local-stack.sh /absolute/work/perfetto-v58.2 --instances 2
 ```
 
+Windows PowerShell에서는 검증된 overlay와 exact v58.2 checkout을 지정해 같은 방식으로
+실행한다.
+
+```powershell
+.\scripts\perfetto\run-local-stack.ps1 C:\work\perfetto-v58.2 -Instances 2
+```
+
 이 경우 공개 UI는 `10000`, `10001`, 공유 내부 upstream은 `11000`, Bridge는
 `5746`을 사용한다. 각 공개 origin은 browser storage와 client ID가 분리된다. 필요하면 `--ui-port`, `--upstream-port`, `--bridge-port`로 서로
 겹치지 않는 base port를 지정한다. 기존 방식의 분리 실행이 필요한 진단에는
