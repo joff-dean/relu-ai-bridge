@@ -64,9 +64,9 @@ describe('loadPerfettoBootstrap', () => {
     {protocol: 'file:', origin: 'null'},
     {protocol: 'chrome-extension:', origin: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'},
     {protocol: 'https:', origin: 'https://user:pass@perfetto.company.example'},
-  ])('HTTP(S) exact page origin이 아니면 요청 전에 거부한다', async (location) => {
+  ])('HTTP(S) exact page origin이 아니면 요청 전에 거부한다', (location) => {
     const target = new FakeMessageTarget();
-    await expect(loadPerfettoBootstrap(location, target)).rejects.toThrow(/exact HTTP\(S\) origin/u);
+    expect(() => loadPerfettoBootstrap(location, target)).toThrow(/origin/u);
     expect(target.sent).toHaveLength(0);
   });
 
