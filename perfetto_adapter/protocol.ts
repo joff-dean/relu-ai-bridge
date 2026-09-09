@@ -16,7 +16,7 @@ export const PERFETTO_SERVER_PROOF_DOMAIN =
 export const PERFETTO_CLIENT_PROOF_DOMAIN =
   'RELU-AI-BRIDGE-PERFETTO-CLIENT-PROOF-V1' as const;
 export const DEFAULT_PERFETTO_BRIDGE_URL =
-  'ws://127.0.0.1:5746/perfetto/ws' as const;
+  'ws://127.0.0.1:5746/perfetto/extension-ws' as const;
 export const PERFETTO_BOUNDED_READ_MARKER =
   '/*relu-ai-bridge:perfetto-bounded-read-v1*/' as const;
 
@@ -113,7 +113,6 @@ export interface BridgeEvent {
   readonly type: 'event';
   readonly name:
     | 'bridge.pong'
-    | 'session.attach_requested'
     | 'session.attached'
     | 'trace.closing';
   readonly payload?: JsonValue;
@@ -251,8 +250,8 @@ export function validateLoopbackBridgeUrl(rawUrl: string): URL {
   if (url.hostname !== '127.0.0.1') {
     throw new Error('브리지 호스트는 127.0.0.1이어야 합니다.');
   }
-  if (url.pathname !== '/perfetto/ws') {
-    throw new Error('브리지 path는 /perfetto/ws이어야 합니다.');
+  if (url.pathname !== '/perfetto/extension-ws') {
+    throw new Error('브리지 path는 /perfetto/extension-ws이어야 합니다.');
   }
   if (url.username || url.password || url.search || url.hash) {
     throw new Error(

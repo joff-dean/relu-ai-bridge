@@ -1,12 +1,12 @@
 # RELU AI Bridge 보안 모델
 
 RELU는 모델, browser content, desktop log, trace/API 응답과 imported artifact를 모두
-신뢰하지 않는다. EndViewer embedded bridge와 Perfetto/browser 중앙 bridge 어느 쪽도
+신뢰하지 않는다. EndViewer embedded bridge, Perfetto Extension/Native Host와 일반 browser 중앙 bridge 어느 쪽도
 사내 서비스의 만능 proxy가 되지 않는 것이 최우선 invariant다.
 
 Windows desktop은 `EndViewer.exe` 내부 stdio MCP와 `CurrentUserOnly` named pipe를
 사용한다. 별도 RELU daemon, TCP port, desktop token과 RELU local JSON은 없다. 아래에서
-loopback HTTP/WebSocket과 credential을 설명하는 항목은 Perfetto/browser 중앙 bridge에만
+loopback HTTP/WebSocket과 credential을 설명하는 항목은 Perfetto Native Host 및 일반 browser 중앙 bridge에만
 적용된다.
 
 Pipe 이름도 `Windows 사용자 SID + serviceId`를 domain-separated SHA-256으로 해시해
@@ -36,7 +36,7 @@ process 내부만으로 방어하지 못한다.
 
 - Server bind는 `127.0.0.1` 또는 `::1`만 허용한다.
 - Host header도 `localhost`, `127.0.0.1`, `[::1]`과 유효 port만 허용한다.
-- `/relu/ws`와 `/perfetto/ws`는 exact Origin이 반드시 있어야 한다.
+- `/relu/ws`와 `/perfetto/extension-ws`는 exact Origin이 반드시 있어야 한다.
 - Generic connector Origin은 service별로 다시 일치시킨다.
 - HTTP control CORS, generic connector Origin, Perfetto Origin은 서로 다른 목록이다.
 - Generic/Perfetto WebSocket은 client/server fresh nonce와 audience·Origin에 묶인 HMAC proof를 먼저 교환한다. Raw connector token은 wire에 보내지 않으며, Context·reconnect secret·Perfetto trace descriptor는 server proof 검증 전에는 보내지 않는다.
@@ -45,14 +45,13 @@ process 내부만으로 방어하지 못한다.
 - HTTP Data Plane은 exact config URL에만 연결하고 redirect를 따르지 않는다.
 - RELU port를 LAN/인터넷에 직접 publish하지 않는다.
 
-Perfetto 개발용 `run-local-stack.sh`는 UI와 `/perfetto/ws`를 각각의 exact
-`http://127.0.0.1:<ui-port>` origin에 묶는다. 플러그인이 요청하는 고정
-`POST /relu/perfetto-bootstrap`은 exact Host/Origin, `Sec-Fetch-Site: same-origin`,
-`Sec-Fetch-Mode: cors`, `Sec-Fetch-Dest: empty`를 모두 확인하고 bounded JSON을
-`no-store`로 반환한다. 응답에는 runtime Perfetto credential만 있으며 endpoint,
-control credential, Capability 또는 permission은 없다. endpoint는 plugin source가
-현재 origin의 고정 `/perfetto/ws`로 파생한다. Trace/browser 입력은 이 계약을 변경하지
-못한다.
+Perfetto 전용 Extension background만 `/perfetto/extension-ws`에 연결한다. HTTP Origin은
+정책에 고정된 `chrome-extension://<exact-id>`여야 하고 query의 `pageOrigin`도 Native Host와
+Bridge config에 고정된 exact HTTP(S) Perfetto origin이어야 한다. 페이지와 격리된 content
+script는 bootstrap과 bounded text frame만 전달하며 endpoint, page origin, Native Host 이름,
+capability 또는 permission을 선택할 수 없다. 첫 application message의 nonce/HMAC audience는
+검증된 page origin과 plugin ID에 다시 묶인다. Trace/browser 입력은 이 계약을 변경하거나
+Extension 권한을 승인할 수 없다.
 
 `mcpAuth:path`는 제한된 client 호환용이다. Token이 URL path·proxy log·history에 남을 위험이 있으므로 Bearer를 기본으로 사용한다.
 
@@ -70,23 +69,23 @@ sandbox 경계 밖이다. Connector와 packaged Chrome Companion에는 이 잔�
 | Credential | 허용 audience | 금지 |
 | --- | --- | --- |
 | `RELU_AI_BRIDGE_TOKEN` | MCP, admin/control API | 모든 connector proof, 외부 API |
-| `perfetto.tokenEnv` | `/perfetto/ws` + exact Perfetto Origin/plugin HMAC proof | MCP, admin, generic service, 외부 API |
+| `perfetto.tokenEnv` | `/perfetto/extension-ws` + exact Extension/page Origin/plugin HMAC proof | MCP, admin, generic service, 외부 API |
 | service `tokenEnv` | 해당 service ID + exact Origin generic HMAC proof | MCP, 승인 API, 다른 service |
 | HTTP `auth.env` | 해당 고정 Data Plane request header | MCP/browser/result/audit |
 
 Perfetto와 generic browser service token은 최소 24자이며 audience마다 다르게 발급한다.
 여러 browser runtime/HTTP Data Plane은 각각 별도 service ID와 `tokenEnv`를 사용한다.
 Token을 Git, config JSON, URL, `localStorage`, transcript와 audit에 넣지 않는다. Perfetto
-local stack은 실행마다 서로 다른 control/connector token을 메모리에 만들고 종료 시
-0700 임시 data directory와 함께 폐기한다. 임시 config JSON에도 token 값은 쓰지 않는다.
-Codex 자동 연결을 선택한 launcher는 control token이 포함된 bounded descriptor를 OS의
-사용자 전용 temp 아래 0700 directory/0600 regular file(POSIX) 또는 사용자 temp ACL
-경계(Windows)에 원자적으로 만들고, 자신의 random instance ID가 일치할 때만 종료 시
-삭제한다. Descriptor path는 Codex 설정에 기록하지 않으며 stdio proxy가 같은 고정 규칙으로
-찾는다. Proxy는 launcher PID 생존과 exact loopback MCP URL, `/health`의 제품/version 및
-Bearer mode를 검증한 후에만 credential을 전송한다. Stale·과대·symlink·다른 사용자
-descriptor는 거부한다.
-Plugin은 same-origin bootstrap으로 받은 전용 token을 현재 페이지의 JavaScript 메모리에만 둔다. Admin UI는 control
+Native Host가 시작한 Bridge는 실행마다 서로 다른 control/connector token을 메모리에 만들고
+Chrome Native Messaging 연결이 끝나면 임시 data directory와 함께 폐기한다. 임시 config
+JSON에도 token 값은 쓰지 않는다. Native Host는 connector token을 Extension에만 반환하고,
+control token이 포함된 bounded descriptor를 OS 사용자 전용 temp 아래 0700 directory/0600
+regular file(POSIX) 또는 사용자 temp ACL 경계(Windows)에 원자적으로 만든다. 자신의 random
+instance ID가 일치할 때만 종료 시 삭제한다. Descriptor path와 credential은 AI client 등록에
+기록되지 않는다. 같은 실행 파일의 stdio proxy는 owner PID, exact loopback MCP URL,
+`/health` 제품/version/Bearer mode를 검증한 뒤에만 사용한다. Stale·과대·symlink·다른 사용자
+descriptor는 거부한다. Plugin은 Extension bootstrap으로 받은 전용 token을 현재 페이지의
+JavaScript 메모리에만 둔다. Admin UI는 control
 token을 해당 탭의 `sessionStorage`에, 선택형 Chrome companion은
 `chrome.storage.session`에만 둔다. Companion 저장 token은 HMAC key로만 사용되고 bearer
 값 자체는 loopback request에 실리지 않는다.
@@ -289,8 +288,8 @@ Bridge의 실제 `configPath`와 `dataDir` 전체는 approved root와 겹치더�
   마지막 조회와 add 사이에 같은 OS account의 외부 writer가 동일 이름을 새로 만드는
   race는 원자적으로 막을 수 없다. 검출한 기존/변경 등록은 보존하지만, 배포 automation은
   EndViewer 최초 등록과 별도 Codex MCP 쓰기를 동시에 실행하지 않는다.
-- Perfetto local stack의 `relu-perfetto` 등록도 공식 CLI의 조회/add/재조회와 exact
-  stdio command/args/environment 비교를 사용한다. Windows 자동 discovery는 고정 설치
+- Perfetto Native Host의 `relu-perfetto` 등록도 공식 CLI의 조회/add/재조회와 exact
+  same-executable stdio command/args/environment 비교를 사용한다. Windows 자동 discovery는 고정 설치
   후보, 유효 Authenticode와 공식 OpenAI publisher만 허용하며 SID-bound `Global\` mutex로
   직렬화한다. 기존의 다른 등록이나 exclusive managed MCP 정책은 보존하고 우회하지 않는다.
 - 등록 command는 회사가 관리하는 안정된 EndViewer 절대 경로와 내부 stdio mode로
@@ -374,9 +373,9 @@ Bridge는 `dataDir/.instance-lock`으로 하나의 data directory에 한 process
 ## Perfetto 전용 방어
 
 - 공식 Perfetto `v58.2` exact tag/commit과 RELU `v58` adapter만 허용하며 이전 기준선 fallback 없음
-- 개발 local stack의 exact same-origin POST bootstrap, fixed endpoint derivation,
-  no-store/page-memory credential과 종료 시 임시 runtime 폐기
-- `/perfetto/ws` exact Origin과 raw token 없는 nonce/HMAC 상호 인증
+- exact-origin Extension의 자동 content script, fixed Native Host/endpoint,
+  Native Messaging/page-memory credential과 Host 종료 시 임시 runtime 폐기
+- `/perfetto/extension-ws` exact Extension/page Origin과 raw token 없는 nonce/HMAC 상호 인증
 - server-owned closed method set
 - page-load random client identity와 trace binding
 - SELECT-only lexer, CTE 금지, forbidden keyword/macro/function

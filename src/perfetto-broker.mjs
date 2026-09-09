@@ -524,14 +524,7 @@ export class PerfettoBroker {
   }
 
   async handleEvent(client, message) {
-    if (message.name === 'bridge.pong') return;
-    if (message.name === 'session.attach_requested') {
-      const sessionId = String(message.payload?.sessionId ?? '');
-      const role = message.payload?.role === 'REF' ? 'ref' : message.payload?.role === 'DUT' ? 'dut' : null;
-      if (!role) throw new Error('Session attach role must be REF or DUT');
-      await this.requestAttach(sessionId, role, client.id, 'plugin');
-      return;
-    }
+    if (message.name === 'bridge.pong' || message.name === 'trace.closing') return;
     throw new Error('Unsupported Perfetto event');
   }
 

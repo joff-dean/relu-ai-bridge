@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
-const roots = ['src', 'bin', 'scripts', 'extension', 'alignment', 'sdk', 'examples'];
+const roots = ['src', 'bin', 'scripts', 'extension', 'perfetto-extension', 'alignment', 'sdk', 'examples'];
 const ignored = new Set(['node_modules', '.git', 'dist']);
 
 async function collect(directory, result = []) {

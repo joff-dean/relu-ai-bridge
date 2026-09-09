@@ -22,13 +22,9 @@
     "services": []
   },
   "perfetto": {
-    "enabled": true,
+    "enabled": false,
     "tokenEnv": "RELU_PERFETTO_CONNECTOR_TOKEN",
-    "websocketPath": "/perfetto/ws",
-    "allowedOrigins": [
-      "http://127.0.0.1:10000",
-      "http://localhost:10000"
-    ],
+    "allowedOrigins": [],
     "requestTimeoutMs": 30000,
     "maxConcurrentRequests": 32,
     "maxWebSocketMessageBytes": 2097152,

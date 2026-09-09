@@ -1,6 +1,7 @@
 # RELU AI Bridge 사내 동기화 및 Connector 통합 운영 가이드
 
-RELU AI Bridge는 embedded Windows 분석 프로그램과 중앙 browser/Perfetto 서비스를 AI에
+RELU AI Bridge는 embedded Windows 분석 프로그램, 관리형 Extension/Native Host 기반 중앙
+Perfetto UI, 일반 browser 서비스를 AI에
 연결하는 범용 플랫폼이다. 이 문서는 외부에서 검증한 RELU core release를 사내로 단방향
 반입하고, Connector #1을 사내 전용 label과 exact SHA로 식별한 회사 Perfetto에
 통합하는 절차다.
@@ -19,7 +20,7 @@ Perfetto public baseline `v58.2`와 adapter contract `v58`은 독립 호환성 �
        사내 immutable RELU vendor mirror
                  │ read-only detached checkout
                  ├─────────────── .NET embedded SDK + signed EndViewer
-                 ├─────────────── 중앙 Perfetto/browser analysis Skills
+                 ├─────────────── Perfetto Extension + Native Host + analysis Skills
                  ├─────────────── 향후 Connector #2..N
                  ▼
  Connector #1: company Perfetto exact SHA
@@ -49,7 +50,7 @@ Perfetto public baseline `v58.2`와 adapter contract `v58`은 독립 호환성 �
 
 ### 중앙 bridge 승인 정책
 
-Perfetto/browser 중앙 bridge의 새 `init` 설정은 사내 단일 사용자 장비의 반복 승인 창을 없애기 위해
+일반 browser 중앙 bridge의 새 `init` 설정은 사내 단일 사용자 장비의 반복 승인 창을 없애기 위해
 `approvals.policy:"trusted_always"`를 명시한다. `policy`를 생략해도 같은 값이
 적용된다. 대화형 통제가 필요한 장비만 `manual`을 명시한다. 보안 담당자는
 permission, root, command profile, service/Capability registry와 egress를 함께
@@ -472,15 +473,19 @@ Perfetto v58.2 build worker의 `python3` 또는 `EMSDK_PYTHON`은 3.10 이상이
 macOS ARM64 worker라면 Rosetta 2 또는 실행 가능한 Java runtime도 필요하다. CI image에서
 Java는 11 이상으로 버전을 고정하고 아래 스크립트의 사전 검사도 우회하지 않는다.
 
-공식 v58.2 통합본의 로컬 실사용 검증은 `run-local-stack.sh`로 수행한다. 단일 UI는
-기본 `10000`, REF/DUT 두 UI는 `--instances 2`를 사용한다. 이 런처는 같은 origin
-bootstrap으로 runtime Perfetto credential을 페이지 메모리에만 전달하므로 사용자에게
-token을 입력시키거나 회사 config에 credential을 기록하지 않는다. 종료 뒤 임시
-runtime directory가 남지 않았는지, 공유 builder를 사용하는 각 UI origin이 별도
-client로 보이는지 함께 확인한다. 공식 Codex가 있으면 user-scope `relu-perfetto`가
-bundled Perfetto Node + RELU stdio proxy의 exact 절대 경로로 등록되며, 최초 등록 뒤
-Codex를 한 번 재시작한다. Control credential은 user-private runtime descriptor에만
-있고 launcher 종료 시 instance ID가 맞는 파일만 제거된다.
+공식 v58.2 통합본은 회사 Perfetto exact origin으로 생성한 Manifest V3 Extension과 함께
+검증한다. Extension은 회사 signing key/managed policy로 ID를 고정하고 `document_start`
+content script가 기본 plugin을 자동 연결하는지 확인한다. Windows Native Host 배포물에는
+서명된 `Relu.AI.Bridge.PerfettoNativeHost.exe`, 고정 Node runtime과 검토된 `app` tree만
+포함한다. 사용자 범위 설치는 exact Extension ID/origin을 config와 Chrome Native Messaging
+manifest에 고정하고, 같은 실행 파일의 `--relu-mcp-stdio`를 user-scope `relu-perfetto`로
+등록한다. 다른 등록과 managed policy 충돌은 덮어쓰지 않는다.
+
+Perfetto 페이지를 열 때 Chrome이 Host/Bridge를 자동 시작하고 사용자 token 입력이나 별도
+launcher 실행이 없어야 한다. REF/DUT 여러 탭은 한 Host/port를 공유하면서 각각 별도
+client/socket/context로 보여야 한다. 탭 reload/close가 다른 탭을 끊지 않는지, 마지막
+Native Messaging 연결 종료 뒤 ephemeral credential, user-private descriptor와 임시 runtime
+directory가 제거되는지 확인한다. 최초 설치 후 실행 중이던 AI 앱은 한 번 재시작한다.
 
 반입본의 Perfetto/WPF UI에는 AI side panel, prompt box 또는 Codex/Claude child runner를
 추가하지 않는다. 데스크톱 AI 앱이 대화·후속 요구·취소를 소유하고 viewer는 MCP Context,
@@ -492,13 +497,12 @@ AI 보고서의 REF/DUT 근거는 URL/button이 아니라 stable label과 exact 
 `perfetto_select_area`를 호출해 실제 연결 탭을 focus한다. 새 browser를 열거나 viewer URL을
 생성하지 않고, trace/session 교체 뒤 stale selector는 기존 binding 검사로 거부한다.
 
-Windows 반입본은 WSL/Linux CI에서 copy overlay와 build를 완료한 뒤 native PowerShell의
-`scripts\perfetto\run-local-stack.ps1 C:\work\perfetto-v58.2 -Instances 2`로
-실행한다. PowerShell launcher도 exact public commit, managed overlay marker, 기본 plugin
-등록과 bundled `ui\node.exe`를 확인하며 외부 `PATH`의 Node를 실행하지 않는다.
-Codex 자동 발견은 고정 설치 후보의 Authenticode와 `OpenAI OpCo, LLC` publisher를
-검증하고, SID-bound `Global\` mutex 안에서 공식 CLI의 get/add/get을 수행한다. 같은
-MCP 이름의 다른 등록이나 managed policy 충돌은 덮어쓰거나 우회하지 않는다.
+Windows 반입본은 WSL/Linux CI에서 copy overlay와 build를 완료한 뒤 native Windows에서
+Extension CRX/정책과 Native Host 패키지를 설치해 중앙 Perfetto URL로 검증한다. Host는
+패키지 안의 고정 `runtime\node.exe`와 `app\scripts\perfetto`만 argument array,
+`UseShellExecute=false`로 실행하고 외부 `PATH`의 Node를 실행하지 않는다. Codex/Claude 자동
+등록은 SID-bound `Global\` mutex 안에서 공식 CLI의 get/add/get을 수행하며 같은 MCP 이름의
+다른 등록이나 managed policy 충돌을 덮어쓰거나 우회하지 않는다.
 
 최소 명령:
 

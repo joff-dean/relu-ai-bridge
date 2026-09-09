@@ -1,11 +1,38 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
+import net from 'node:net';
 import path from 'node:path';
 import test from 'node:test';
 import { fixture } from './helpers.mjs';
 import { createApplication } from '../src/server.mjs';
 import { requestBindingHash } from '../src/http-proof.mjs';
+
+async function websocketUpgrade(port, target, origin) {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(port, '127.0.0.1');
+    let received = '';
+    socket.setEncoding('utf8');
+    socket.once('error', reject);
+    socket.on('data', (chunk) => {
+      received += chunk;
+      if (received.includes('\r\n\r\n')) {
+        socket.destroy();
+        resolve(received);
+      }
+    });
+    socket.once('close', () => resolve(received));
+    socket.once('connect', () => socket.write(
+      `GET ${target} HTTP/1.1\r\n` +
+      `Host: 127.0.0.1:${port}\r\n` +
+      `Origin: ${origin}\r\n` +
+      'Connection: Upgrade\r\n' +
+      'Upgrade: websocket\r\n' +
+      'Sec-WebSocket-Version: 13\r\n' +
+      'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n',
+    ));
+  });
+}
 
 function bridgeProof(token, kind, record) {
   const input = [
@@ -411,6 +438,25 @@ test('Chrome bridge requests use one-shot mutual proof without transmitting the 
     body: JSON.stringify({ ...record, serverNonce: undefined }),
   });
   assert.equal(unpaired.status, 403);
+});
+
+test('Perfetto WebSocket accepts only the configured Extension and exact page origin', async (t) => {
+  const env = await fixture();
+  const extensionId = 'a'.repeat(32);
+  const extensionOrigin = `chrome-extension://${extensionId}`;
+  const pageOrigin = 'https://perfetto.company.example';
+  env.config.server.allowedChromeExtensionIds = [extensionId];
+  env.config.perfetto.allowedOrigins = [pageOrigin];
+  const app = await createApplication({config: env.config});
+  const address = await app.listen();
+  t.after(async () => { await app.close(); await env.cleanup(); });
+
+  const target = `/perfetto/extension-ws?pageOrigin=${encodeURIComponent(pageOrigin)}`;
+  assert.match(await websocketUpgrade(address.port, target, extensionOrigin), /^HTTP\/1\.1 101/u);
+  assert.match(await websocketUpgrade(address.port, target, pageOrigin), /^HTTP\/1\.1 403/u);
+  assert.match(await websocketUpgrade(address.port, target, `chrome-extension://${'b'.repeat(32)}`), /^HTTP\/1\.1 403/u);
+  assert.match(await websocketUpgrade(address.port, '/perfetto/extension-ws?pageOrigin=https%3A%2F%2Fevil.example', extensionOrigin), /^HTTP\/1\.1 403/u);
+  assert.match(await websocketUpgrade(address.port, '/perfetto/ws', extensionOrigin), /^HTTP\/1\.1 404/u);
 });
 
 test('worker approvals cannot be replayed after retirement or a changed clear target set', async (t) => {

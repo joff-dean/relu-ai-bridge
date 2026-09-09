@@ -19,7 +19,7 @@ export async function fixture(options = {}) {
       enabled: true,
       tokenEnv: 'RELU_PERFETTO_CONNECTOR_TOKEN',
       token: 'perfetto_connector_token_that_is_long_enough',
-      websocketPath: '/perfetto/ws',
+      extensionWebsocketPath: '/perfetto/extension-ws',
       allowedOrigins: ['http://127.0.0.1:10000'],
       requestTimeoutMs: 5000,
       maxConcurrentRequests: 8,

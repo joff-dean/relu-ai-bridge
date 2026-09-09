@@ -596,6 +596,7 @@ dotnet_registrar_source = tagged_text("sdk-dotnet/src/Relu.AI.Bridge.DesktopConn
 dotnet_peer_source = tagged_text("sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Internal/EmbeddedPipePeerVerifier.cs")
 skills_manifest = tagged_json("skills/manifest.json")
 extension = tagged_json("extension/manifest.json")
+perfetto_extension = tagged_json("perfetto-extension/manifest.json")
 web_connector_source = tagged_text("sdk/relu-web-connector.js")
 plugin_source = tagged_text("plugin/io.company.RELUPerfettoBridge/index.ts")
 mcp_source = tagged_text("src/mcp.mjs")
@@ -991,6 +992,12 @@ if not isinstance(extension, dict) or extension.get("name") != "RELU AI Bridge C
     fail("Chrome Companion name")
 if extension.get("version") != core_version:
     fail("Chrome Companion version")
+if not isinstance(perfetto_extension, dict) or perfetto_extension.get("name") != "RELU Perfetto Connector":
+    fail("Perfetto Extension name")
+if perfetto_extension.get("version") != core_version:
+    fail("Perfetto Extension version")
+if perfetto_extension.get("permissions") != ["nativeMessaging"]:
+    fail("Perfetto Extension permission")
 
 version_pattern = re.escape(core_version)
 require_unique_regex(
@@ -1003,12 +1010,6 @@ require_unique_regex(
     plugin_code,
     rf"^[ \t]*const PLUGIN_VERSION = '{version_pattern}';[ \t]*$",
     "Perfetto plugin version",
-    re.MULTILINE,
-)
-require_unique_regex(
-    plugin_code,
-    r"^[ \t]*const COMMAND_SOURCE = 'RELU AI Bridge · Perfetto';[ \t]*$",
-    "Perfetto plugin branding",
     re.MULTILINE,
 )
 require_unique_regex(

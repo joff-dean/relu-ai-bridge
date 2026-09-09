@@ -1,69 +1,87 @@
 // Copyright (c) 2026. All rights reserved.
 
 import {
-  PERFETTO_BOOTSTRAP_PATH,
+  PERFETTO_EXTENSION_MESSAGE_SOURCE,
+  PERFETTO_EXTENSION_PROTOCOL_VERSION,
+  PERFETTO_PLUGIN_MESSAGE_SOURCE,
   loadPerfettoBootstrap,
+  type PerfettoExtensionMessageTarget,
 } from './bootstrap';
 
 const TOKEN = 'relu_perfetto_runtime_0123456789';
-const LOCATION = {
-  protocol: 'http:',
-  hostname: '127.0.0.1',
-  port: '10000',
-  origin: 'http://127.0.0.1:10000',
-};
+const LOCATION = {protocol: 'https:', origin: 'https://perfetto.company.example'};
+
+class FakeMessageTarget implements PerfettoExtensionMessageTarget {
+  readonly sent: Array<{message: unknown; targetOrigin: string}> = [];
+  private listener?: (event: MessageEvent<unknown>) => void;
+
+  addEventListener(_type: 'message', listener: (event: MessageEvent<unknown>) => void): void {
+    this.listener = listener;
+  }
+
+  removeEventListener(_type: 'message', listener: (event: MessageEvent<unknown>) => void): void {
+    if (this.listener === listener) this.listener = undefined;
+  }
+
+  postMessage(message: unknown, targetOrigin: string): void {
+    this.sent.push({message, targetOrigin});
+  }
+
+  respond(data: unknown): void {
+    this.listener?.({source: this, data} as unknown as MessageEvent<unknown>);
+  }
+}
 
 describe('loadPerfettoBootstrap', () => {
-  test('같은 exact loopback origin에서 credential을 메모리로 읽고 endpoint를 파생한다', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({version: 1, token: TOKEN}), {
-        status: 200,
-        headers: {'content-type': 'application/json; charset=utf-8'},
-      }),
-    );
-
-    await expect(loadPerfettoBootstrap(LOCATION, fetchImpl)).resolves.toEqual({
-      endpoint: 'ws://127.0.0.1:10000/perfetto/ws',
+  test('배포 Extension에서 ephemeral credential을 받아 온다', async () => {
+    const target = new FakeMessageTarget();
+    const nonce = '0123456789abcdef0123456789abcdef';
+    const loading = loadPerfettoBootstrap(LOCATION, target, () => nonce, 1000);
+    expect(target.sent).toEqual([{
+      targetOrigin: LOCATION.origin,
+      message: {
+        source: PERFETTO_PLUGIN_MESSAGE_SOURCE,
+        version: PERFETTO_EXTENSION_PROTOCOL_VERSION,
+        type: 'bootstrap.request',
+        nonce,
+      },
+    }]);
+    target.respond({
+      source: PERFETTO_EXTENSION_MESSAGE_SOURCE,
+      version: PERFETTO_EXTENSION_PROTOCOL_VERSION,
+      type: 'bootstrap.response',
+      nonce,
+      ok: true,
+      value: {endpoint: 'ws://127.0.0.1:5746/perfetto/extension-ws', token: TOKEN},
+    });
+    await expect(loading).resolves.toEqual({
+      endpoint: 'ws://127.0.0.1:5746/perfetto/extension-ws',
       token: TOKEN,
     });
-    expect(fetchImpl).toHaveBeenCalledWith(
-      PERFETTO_BOOTSTRAP_PATH,
-      expect.objectContaining({
-        method: 'POST',
-        cache: 'no-store',
-        credentials: 'omit',
-        redirect: 'error',
-      }),
-    );
   });
 
   test.each([
-    {...LOCATION, hostname: 'localhost', origin: 'http://localhost:10000'},
-    {...LOCATION, hostname: '192.168.0.2', origin: 'http://192.168.0.2:10000'},
-    {...LOCATION, protocol: 'https:', origin: 'https://127.0.0.1:10000'},
-    {...LOCATION, port: '', origin: 'http://127.0.0.1'},
-  ])('exact 127.0.0.1 HTTP origin이 아니면 요청 전에 거부한다', async (location) => {
-    const fetchImpl = vi.fn();
-    await expect(loadPerfettoBootstrap(location, fetchImpl)).rejects.toThrow(
-      /exact 127\.0\.0\.1/u,
-    );
-    expect(fetchImpl).not.toHaveBeenCalled();
+    {protocol: 'file:', origin: 'null'},
+    {protocol: 'chrome-extension:', origin: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'},
+    {protocol: 'https:', origin: 'https://user:pass@perfetto.company.example'},
+  ])('HTTP(S) exact page origin이 아니면 요청 전에 거부한다', async (location) => {
+    const target = new FakeMessageTarget();
+    await expect(loadPerfettoBootstrap(location, target)).rejects.toThrow(/exact HTTP\(S\) origin/u);
+    expect(target.sent).toHaveLength(0);
   });
 
-  test.each([
-    {version: 1, token: 'short'},
-    {version: 2, token: TOKEN},
-    {version: 1, token: TOKEN, endpoint: 'ws://evil.example/perfetto/ws'},
-    [1, TOKEN],
-  ])('변경되거나 과도한 bootstrap 계약을 거부한다', async (body) => {
-    const fetchImpl = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(body), {
-        status: 200,
-        headers: {'content-type': 'application/json'},
-      }),
-    );
-    await expect(loadPerfettoBootstrap(LOCATION, fetchImpl)).rejects.toThrow(
-      /bootstrap 계약/u,
-    );
+  test('변경된 Extension bootstrap 계약을 거부하고 직접 연결하지 않는다', async () => {
+    const target = new FakeMessageTarget();
+    const nonce = '0123456789abcdef0123456789abcdef';
+    const loading = loadPerfettoBootstrap(LOCATION, target, () => nonce, 1000);
+    target.respond({
+      source: PERFETTO_EXTENSION_MESSAGE_SOURCE,
+      version: 1,
+      type: 'bootstrap.response',
+      nonce,
+      ok: true,
+      value: {endpoint: 'ws://evil.example/perfetto/ws', token: TOKEN},
+    });
+    await expect(loading).rejects.toThrow(/bootstrap 계약/u);
   });
 });

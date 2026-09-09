@@ -73,11 +73,11 @@ async function main() {
     const projectRoot = args[1] ?? process.cwd();
     const result = await createInitialConfig(target, projectRoot);
     process.stdout.write(`Created ${result.configPath}\n`);
-    process.stdout.write('Store these audience-specific tokens in your company secret manager; they are shown only once:\n');
+    process.stdout.write('Store this token in your company secret manager; it is shown only once:\n');
     process.stdout.write(`Control/MCP: ${result.token}\n`);
-    process.stdout.write(`Perfetto connector: ${result.perfettoToken}\n\n`);
+    process.stdout.write('\n');
     const executable = fileURLToPath(import.meta.url);
-    process.stdout.write(`Start with:\nRELU_AI_BRIDGE_CONFIG=${shellQuote(result.configPath)} RELU_AI_BRIDGE_TOKEN='<control-token>' RELU_PERFETTO_CONNECTOR_TOKEN='<perfetto-token>' ${shellQuote(process.execPath)} ${shellQuote(executable)} serve\n`);
+    process.stdout.write(`Start with:\nRELU_AI_BRIDGE_CONFIG=${shellQuote(result.configPath)} RELU_AI_BRIDGE_TOKEN='<control-token>' ${shellQuote(process.execPath)} ${shellQuote(executable)} serve\n`);
     return;
   }
   if (command === 'doctor') {

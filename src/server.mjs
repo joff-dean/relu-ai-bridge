@@ -292,15 +292,30 @@ export async function createApplication(options = {}) {
       const requestTarget = request.url ?? '/';
       if (!requestTarget.startsWith('/') || requestTarget.startsWith('//')) throw new Error('Invalid request target');
       const requestUrl = new URL(requestTarget, 'http://127.0.0.1');
-      const isPerfettoSocket = config.perfetto.enabled && requestUrl.pathname === config.perfetto.websocketPath;
+      const isPerfettoSocket = config.perfetto.enabled && requestUrl.pathname === config.perfetto.extensionWebsocketPath;
       const isConnectorSocket = config.connectors.enabled && requestUrl.pathname === config.connectors.websocketPath;
       if (!isPerfettoSocket && !isConnectorSocket) {
         socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
         return socket.destroy();
       }
-      const origin = request.headers.origin;
-      const allowedOrigins = isPerfettoSocket ? config.perfetto.allowedOrigins : config.connectors.allowedOrigins;
-      if (typeof origin !== 'string' || !allowedOrigins.includes(origin)) {
+      const transportOrigin = request.headers.origin;
+      let connectorOrigin = transportOrigin;
+      if (isPerfettoSocket) {
+        const extension = String(transportOrigin ?? '').match(/^chrome-extension:\/\/([a-p]{32})$/u);
+        const queryKeys = [...requestUrl.searchParams.keys()];
+        const pageOrigin = requestUrl.searchParams.get('pageOrigin');
+        if (
+          !extension ||
+          !config.server.allowedChromeExtensionIds.includes(extension[1]) ||
+          queryKeys.length !== 1 || queryKeys[0] !== 'pageOrigin' ||
+          typeof pageOrigin !== 'string' ||
+          !config.perfetto.allowedOrigins.includes(pageOrigin)
+        ) {
+          socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+          return socket.destroy();
+        }
+        connectorOrigin = pageOrigin;
+      } else if (typeof transportOrigin !== 'string' || !config.connectors.allowedOrigins.includes(transportOrigin)) {
         socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
         return socket.destroy();
       }
@@ -310,8 +325,8 @@ export async function createApplication(options = {}) {
           : config.connectors.maxWebSocketMessageBytes,
       });
       if (connection) {
-        if (isPerfettoSocket) perfetto.accept(connection, { origin });
-        else connectors.accept(connection, { origin });
+        if (isPerfettoSocket) perfetto.accept(connection, { origin: connectorOrigin });
+        else connectors.accept(connection, { origin: connectorOrigin });
       }
     } catch {
       socket.destroy();

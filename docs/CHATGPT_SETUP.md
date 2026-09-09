@@ -23,12 +23,11 @@ OpenAI 공식 문서 기준으로 local Codex client는 Streamable HTTP와 beare
 node ./bin/relu-ai-bridge.mjs init ./config/local.json /absolute/approved/project
 ```
 
-출력된 control token과 별도 Perfetto connector token을 회사 secret manager에 따로 저장한다. 저장소나 shell history에 token literal을 넣지 않는다.
+출력된 일반 browser bridge control token을 회사 secret manager에 저장한다. 저장소나 shell history에 token literal을 넣지 않는다. Perfetto credential은 Native Host가 실행마다 생성하므로 이 절차에서 만들거나 입력하지 않는다.
 
 ```bash
 export RELU_AI_BRIDGE_CONFIG="$PWD/config/local.json"
 export RELU_AI_BRIDGE_TOKEN="$(approved-secret-command)"
-export RELU_PERFETTO_CONNECTOR_TOKEN="$(approved-perfetto-secret-command)"
 node ./bin/relu-ai-bridge.mjs doctor
 node ./bin/relu-ai-bridge.mjs serve
 ```
@@ -71,47 +70,28 @@ proof만 보내며 raw control token을 Authorization header로 전송하지 않
 경우 control token을 회전하며 수동 정책의 저장 grant도 함께 철회한다. `403`이면 실제
 extension ID와 allowlist, Bridge 재시작 여부부터 확인한다.
 
-## 2A. Local Codex/ChatGPT desktop 연결
+## 2A. Perfetto용 Codex/ChatGPT desktop 연결
 
-공식 v58.2 개발 통합본은 별도 token 설정 대신 아래 런처를 사용한다.
+관리자가 회사 Perfetto exact origin으로 빌드·서명한 Extension과 Windows Native Host
+패키지를 배포한다. 설치 스크립트는 Chrome user-scope Native Messaging manifest와 같은
+실행 파일의 `--relu-mcp-stdio`를 `relu-perfetto` MCP로 등록한다. 다른 command가 같은
+이름을 선점했으면 덮어쓰지 않는다. 같은 설치 단계가 release manifest로 검증한 분석
+Skills를 Codex와 Claude user scope에 설치하며 수정되었거나 충돌하는 기존 Skill은
+덮어쓰지 않는다. 등록 command와 Extension storage에는 credential이
+들어가지 않는다. 최초 설치 뒤 Codex/ChatGPT desktop을 한 번 재시작한다.
 
-```bash
-scripts/perfetto/run-local-stack.sh /absolute/work/perfetto-v58.2 --instances 2
-```
-
-macOS launcher는 실행 중인 공식 ChatGPT bundle의 고정 Codex 경로와 signing identity를
-확인한다. Windows launcher는 고정 설치 후보의 유효한 Authenticode 서명과
-`OpenAI OpCo, LLC` publisher를 확인하고, SID-bound `Global\` mutex 안에서만 공식 CLI를
-실행한다. 둘 다 `codex mcp get/add`로 `relu-perfetto` stdio 항목을 조회·추가·재조회하며
-다른 command가 같은 이름을 선점했으면 덮어쓰지 않는다. 등록 command에는 bundled
-Perfetto Node와 검토된 local proxy의 절대 경로만 들어가고 credential은 들어가지 않는다.
-
-Control credential은 런처가 생성한 사용자 전용 임시 descriptor(Windows ACL 경계,
-POSIX 0700 directory/0600 file)에만 존재한다. Proxy는 live launcher PID와 exact
-`127.0.0.1` endpoint, `/health` 제품/version/auth를 확인한 뒤 bearer를 사용하고 MCP
-session을 종료 시 닫는다. 런처가 끝나면 자신이 소유한 descriptor만 제거한다. 최초
-등록 후 Codex를 한 번 재시작해야 하며, 이미 열린 task에는 도구가 hot-load되지 않는다.
+Perfetto 페이지를 열면 Extension content script가 자동 주입되고 Chrome이 Native Host를
+자동 시작한다. Native Host는 ephemeral Bridge를 시작하며 control credential은 사용자 전용
+bounded runtime descriptor에만, connector credential은 Native Messaging과 페이지 메모리에만
+존재한다. 모든 Perfetto 탭은 한 Native Host와 port를 공유하되 탭별 `clientId`/socket/context는
+분리된다. 마지막 Native Messaging 연결이 끝나면 Host가 자신이 소유한 descriptor와 임시
+data를 제거한다.
 
 Perfetto에는 AI 패널을 열지 않는다. Codex/ChatGPT desktop의 새 task에서 분석과 후속 질문을
 계속하고, 작업을 멈추려면 AI 앱의 중지 기능을 사용한다. 결과의 `REF-1`, `DUT-2`는
 browser link가 아니라 근거 label이다. “DUT-2로 이동해줘”라고 명시하면 Codex가
 `perfetto_select_area`를 호출해 새 내장 browser가 아니라 현재 연결된 실제 Perfetto 탭을
 선택·확대한다. 보고서 생성만으로 화면을 자동 이동하지 않는다.
-
-아래 수동 HTTP 설정은 local stack이 아닌 장기 실행 중앙 Bridge를 별도로 연결할 때만
-사용한다.
-
-`~/.codex/config.toml` 또는 trusted project의 `.codex/config.toml`에 다음을 추가한다.
-
-```toml
-[mcp_servers.relu_ai_bridge]
-url = "http://127.0.0.1:5746/mcp"
-bearer_token_env_var = "RELU_AI_BRIDGE_TOKEN"
-tool_timeout_sec = 60
-default_tools_approval_mode = "writes"
-```
-
-환경변수는 Codex/ChatGPT desktop process가 실제로 상속해야 한다. 설정 후 해당 local client에서 MCP server 목록을 확인하고 필요하면 그 client를 재시작한다.
 
 확인 항목:
 
@@ -120,7 +100,7 @@ default_tools_approval_mode = "writes"
 - `/mcp` 호출에 401이 아닌 initialize 응답이 오는지
 - tool schema 변경 뒤 새 session에서 목록이 갱신됐는지
 
-플랫폼 승인과 이 프로젝트의 local policy는 별개다. 새 RELU 설정의
+플랫폼 승인과 이 프로젝트의 local policy는 별개다. RELU 설정의
 `trusted_always`는 로컬의 always-eligible 호출을 자동 허용하지만 Codex/ChatGPT
 플랫폼 자체의 approval mode나 사용자 의도를 바꾸지 않는다.
 
@@ -257,10 +237,9 @@ control token과 달라야 한다. EndViewer는 중앙 session 목록에 나타�
 
 ### Perfetto client가 0개
 
-MCP 연결과 Perfetto WebSocket 연결은 별개다. `run-local-stack.sh`/`.ps1`로 연 공식
-v58.2 통합본은 same-origin bootstrap으로 자동 연결되며 token 입력이 없다. 상태가
-`RELU: 연결됨`인지 확인하고 새 Codex task에서 `relu-perfetto`가 enabled인지 확인한다.
-기존의 별도 중앙 Bridge와 임의 사내 origin을 수동 실행한 경우에만 `RELU AI Bridge 연결`
-command에 control token이 아닌 전용 `RELU_PERFETTO_CONNECTOR_TOKEN`을 입력하고 exact
-`perfetto.allowedOrigins`를 설정한다. Plugin은 어느 경로에서도 raw token을 wire에
-전송하지 않고 fresh HMAC server proof를 확인한 뒤에만 trace descriptor를 공개한다.
+MCP 등록과 Perfetto 탭 연결은 별개다. 회사 Perfetto URL이 배포 Extension의 exact match인지,
+Extension ID와 Native Host manifest/config의 ID가 같은지, 현재 사용자의 Chrome Native
+Messaging registry가 설치됐는지 확인한다. Perfetto 상태가 `RELU: 연결됨`인지 확인하고 새
+Codex task에서 `relu-perfetto`가 enabled인지 확인한다. Token 입력이나 별도 Bridge 실행으로
+우회하지 않는다. Plugin은 raw token을 wire에 전송하지 않고 fresh HMAC server proof를
+확인한 뒤에만 trace descriptor를 공개한다.

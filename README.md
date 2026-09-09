@@ -89,9 +89,9 @@ GUI bridge host는 Windows 사용자별 단일 EndViewer process를 전제로 �
 선택 구간이 없어도 host와 등록은 올라오며, Context/분석 호출은 첫 확정 선택 전까지
 `CONTEXT_UNAVAILABLE`을 반환한다.
 
-## Perfetto/browser 중앙 bridge 빠른 시작
+## 일반 browser 중앙 bridge 빠른 시작
 
-아래 절차는 **Perfetto와 사내 웹서비스를 연결하는 중앙 bridge에만 해당한다**.
+아래 절차는 **Perfetto가 아닌 사내 웹서비스를 연결하는 중앙 bridge에만 해당한다**.
 요구사항은 Node.js 20.11 이상이다. macOS/Linux와 Windows local server를 지원한다.
 Perfetto v58.2 bootstrap·build·개발 서버에는 Python 3.10 이상이 필요하다. macOS
 ARM64 build에는 Rosetta 2 또는 Java 11 이상 runtime도 필요하며, overlay script는
@@ -103,8 +103,8 @@ node ./bin/relu-ai-bridge.mjs init \
   /absolute/path/to/approved/project
 ```
 
-명령이 출력한 control token과 별도 Perfetto connector token은 회사 secret manager에 저장한다. 기존 설정 파일은 덮어쓰지 않는다.
-Perfetto를 배포하지 않는 장비는 `perfetto.enabled:false`로 명시하면 Perfetto token 주입을 생략할 수 있다.
+명령이 출력한 control token은 회사 secret manager에 저장한다. 기존 설정 파일은 덮어쓰지 않는다.
+Perfetto는 이 설정 경로에서 비활성화되며 아래 전용 Extension/Native Host 경로만 사용한다.
 생성되는 설정은 의도적으로 read-only다. `write`, `commands`, `goalLoop`,
 `multiAgent`와 모든 command profile은 비활성 상태이며, 사내 보안 검토 뒤 필요한
 기능만 하나씩 켠다. 새로 생성한 설정은 `approvals.policy: "trusted_always"`라서
@@ -113,7 +113,6 @@ Perfetto를 배포하지 않는 장비는 `perfetto.enabled:false`로 명시하�
 ```bash
 export RELU_AI_BRIDGE_CONFIG="$PWD/config/local.json"
 export RELU_AI_BRIDGE_TOKEN="$(approved-secret-command)"
-export RELU_PERFETTO_CONNECTOR_TOKEN="$(approved-perfetto-secret-command)"
 node ./bin/relu-ai-bridge.mjs doctor
 node ./bin/relu-ai-bridge.mjs serve
 ```
@@ -125,11 +124,11 @@ http://127.0.0.1:5746/health
 http://127.0.0.1:5746/admin/
 ```
 
-Admin token은 현재 탭의 `sessionStorage`에만 저장한다. Perfetto와 서비스 커넥터 token은 각각 다른 값이어야 한다.
+Admin token은 현재 탭의 `sessionStorage`에만 저장한다. 일반 browser 서비스의 커넥터 token은 control token과 다른 값이어야 한다.
 
 ## 중앙 bridge를 Claude에 연결
 
-다음 `.mcp.json` 예시는 Perfetto/browser 중앙 bridge용이다. EndViewer desktop
+다음 `.mcp.json` 예시는 일반 browser 중앙 bridge용이다. EndViewer desktop과 Perfetto
 embedded 경로에는 사용하지 않는다.
 
 ```json
@@ -152,13 +151,13 @@ embedded 경로에는 사용하지 않는다.
 2. 분석할 session의 `get_context`
 3. `list_capabilities`
 4. 허용된 작업만 `execute`
-5. Perfetto REF/DUT이면 전용 `perfetto_*` 도구 사용
 
 Claude Code trust, 사내 managed MCP, Claude Desktop packaging, claude.ai 원격 연결 경계는 [Claude 설정 가이드](docs/CLAUDE_SETUP_KO.md)에 자세히 설명한다.
 
-중앙 Perfetto/browser 선택 구간의 분석 순서와 보고 형식을 공급하려면 정본 Skill을
-설치한다. EndViewer desktop은 embedded service definition을 MCP `2025-06-18`
-`initialize` 응답의 `instructions`로 자동 제공하므로 이 단계가 필요 없다. 중앙 Project scope
+일반 browser 선택 구간의 분석 순서와 보고 형식을 공급하려면 정본 Skill을
+설치한다. Perfetto 사용자 범위 Skill은 Native Host 설치 과정에 포함되고 EndViewer desktop은
+embedded service definition을 MCP `2025-06-18` `initialize` 응답의 `instructions`로 자동
+제공하므로 이 단계가 필요 없다. 일반 browser의 Project scope
 예시는 다음과 같다.
 
 ```bash
@@ -341,19 +340,33 @@ Java 11 이상 runtime을 `PATH`에 둔다.
 scripts/perfetto/bootstrap.sh /absolute/work/perfetto-v58.2
 scripts/perfetto/integrate.sh --mode copy /absolute/work/perfetto-v58.2
 scripts/perfetto/build-test.sh --install-deps --typecheck /absolute/work/perfetto-v58.2
-scripts/perfetto/run-local-stack.sh /absolute/work/perfetto-v58.2
+node scripts/perfetto/build-extension.mjs \
+  --origin https://perfetto.company.example \
+  --output /absolute/release/relu-perfetto-extension
 ```
 
-`run-local-stack.sh`는 기본적으로 `http://127.0.0.1:10000`에서 Perfetto UI와
-`/perfetto/ws`를 같은 origin으로 제공한다. 실행할 때마다 control/Perfetto credential을
-서로 다르게 생성하고, 플러그인은 고정된 same-origin POST bootstrap에서 Perfetto
-credential만 받아 페이지 메모리에 둔다. 따라서 토큰 입력·URL query·browser storage가
-필요 없다. 공식 Codex가 설치된 장비에서는 런처가 공식 CLI로 user-scope
-`relu-perfetto` stdio MCP를 조회·등록한다. stdio 중계기는 사용자 전용 임시 runtime
-descriptor에서 control credential을 읽으므로 Codex 설정, 명령 인자, 화면에 token을
-넣지 않는다. 최초 등록 뒤 Codex를 한 번 재시작하고 새 task에서 바로 분석을 요청한다.
-런처 종료 시 임시 config/data, descriptor와 credential도 제거된다. 기존의 별도 Bridge
-운영 설정은 위 중앙 bridge 빠른 시작 절차를 계속 사용한다.
+Perfetto 운영 경로는 하나뿐이다. 사내 Perfetto exact origin으로 빌드·서명한 Manifest V3
+Extension을 Chrome 관리 정책으로 설치하고, Windows 사용자 범위에
+`com.relu_ai_bridge.perfetto` Native Messaging Host를 등록한다. Perfetto 페이지가 열리면
+content script가 자동 주입되고 Chrome이 Native Host를 자동 시작한다. Native Host는 하나의
+loopback Bridge를 시작해 모든 Perfetto 탭이 공유하게 하고, ephemeral control/connector
+credential은 Native Messaging과 사용자 전용 runtime descriptor로만 전달한다. 사용자에게
+토큰 입력, Bridge 실행, 브라우저 재실행 절차가 없다.
+
+Windows 배포 패키지는 `Relu.AI.Bridge.PerfettoNativeHost.exe`, 고정 Node runtime과 이
+저장소의 `app` tree를 포함한다. 패키지를 검증된 위치에 설치한 뒤 다음 명령으로 exact
+Extension ID/origin과 Chrome user-scope manifest, Codex/Claude user-scope
+`relu-perfetto` MCP, manifest-verified user-scope 분석 Skills를 한 번에 구성한다.
+
+```powershell
+.\scripts\perfetto\install-native-host.ps1 `
+  -InstallDirectory 'C:\Program Files\RELU Perfetto Connector' `
+  -ExtensionId 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' `
+  -PerfettoOrigin 'https://perfetto.company.example'
+```
+
+이 공개 저장소는 Native Host source와 설치 계약을 제공하며 회사 서명 바이너리나 완성된
+Windows 설치 파일을 제공했다고 주장하지 않는다.
 
 Perfetto와 WPF 안에는 별도 AI 채팅 패널이나 CLI runner를 넣지 않는다. 분석 대화, 후속
 질문과 작업 중지는 Codex/Claude 같은 데스크톱 AI 앱에서 수행한다. 사용자가 AI 앱에서
@@ -362,25 +375,11 @@ Perfetto와 WPF 안에는 별도 AI 채팅 패널이나 CLI runner를 넣지 않
 이동해줘”라고 요청했을 때만 AI client가 기존 `perfetto_select_area` 승인·operation ledger
 경로를 호출해 현재 연결된 실제 Perfetto 탭을 zoom/focus한다.
 
-REF/DUT처럼 여러 UI가 필요하면 Bridge 하나에 여러 instance를 띄운다.
-
-```bash
-scripts/perfetto/run-local-stack.sh /absolute/work/perfetto-v58.2 --instances 2
-```
-
-Windows PowerShell에서는 검증된 overlay와 exact v58.2 checkout을 지정해 같은 방식으로
-실행한다.
-
-```powershell
-.\scripts\perfetto\run-local-stack.ps1 C:\work\perfetto-v58.2 -Instances 2
-```
-
-이 경우 공개 UI는 `10000`, `10001`, 공유 내부 upstream은 `11000`, Bridge는
-`5746`을 사용한다. 각 공개 origin은 browser storage와 client ID가 분리된다. 필요하면 `--ui-port`, `--upstream-port`, `--bridge-port`로 서로
-겹치지 않는 base port를 지정한다. 기존 방식의 분리 실행이 필요한 진단에는
-`run-dev-server.sh`를 사용할 수 있지만, 동일 출처 bootstrap이 없으므로 자동 연결
-경로가 아니다. 같은 Windows 계정의 모든 Codex project에 user-scope 항목이 보이므로
-프로젝트별 격리가 필요하면 조직 managed MCP 정책으로 제한한다.
+REF/DUT처럼 여러 trace가 필요하면 같은 중앙 Perfetto 주소를 여러 탭으로 연다. 탭마다
+plugin instance와 `clientId`가 분리되고 Extension background의 개별 socket으로 연결되지만,
+Native Host와 loopback Bridge port는 하나만 사용한다. 한 탭의 reload/close는 다른 탭의
+분석을 중단하지 않는다. 같은 Windows 계정의 모든 Codex/Claude project에는 user-scope
+MCP가 보이므로 프로젝트별 격리가 필요하면 조직 managed MCP 정책으로 제한한다.
 
 개발 중 plugin/adapter source를 바꾼 뒤에는 변경을 개발 브랜치에 커밋하고
 `scripts/perfetto/integrate.sh --mode copy --refresh /absolute/work/perfetto-v58.2`로
@@ -433,7 +432,7 @@ scripts/perfetto/build-test.sh --build /absolute/work/perfetto-v58.2
 
 ## 중요한 보안·운영 제한
 
-- 이 항목의 server/port/token 제한은 Perfetto/browser 중앙 bridge에 관한 것이다. Embedded desktop은 TCP listener를 열지 않는다.
+- 이 항목의 server/port/token 제한은 Perfetto Native Host의 loopback Bridge와 일반 browser 중앙 bridge에 관한 것이다. Embedded desktop은 TCP listener를 열지 않는다.
 - 중앙 server는 explicit loopback에만 bind한다. 인터넷에 직접 노출하지 않는다.
 - service Origin을 connector WebSocket에 추가해도 admin/control CORS는 열리지 않는다.
 - DB와 API Capability는 read-only로 시작하고 결과·검색량·timeout을 작게 제한한다.

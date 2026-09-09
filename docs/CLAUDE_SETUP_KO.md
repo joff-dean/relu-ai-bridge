@@ -135,13 +135,13 @@ MCP `2025-06-18` `initialize` 응답의 `instructions`로 자동 전달된다. D
 관찰·가설·확신도·데이터 한계를 표준화할 때만 사용한다. 검증된 release와 checksum을
 사용하고 EndViewer 연결의 전제 조건으로 만들지 않는다.
 
-## 5. Perfetto/browser 중앙 bridge
+## 5. 일반 browser 중앙 bridge
 
-아래부터는 EndViewer가 아니라 **Perfetto와 사내 웹서비스**를 위한 별도 운영 경로다.
+아래부터는 EndViewer와 Perfetto가 아닌 **사내 웹서비스**를 위한 별도 운영 경로다.
 
 ```text
 Claude Code ──Streamable HTTP + control credential──▶ 127.0.0.1:5746/mcp
-Perfetto/browser ──origin-bound authenticated WS────▶ 중앙 RELU AI Bridge
+Browser ──────────origin-bound authenticated WS────▶ 중앙 RELU AI Bridge
 ```
 
 이 경로는 browser origin과 별도 process를 넘기 때문에 다음 항목이 필요하다.
@@ -149,7 +149,7 @@ Perfetto/browser ──origin-bound authenticated WS────▶ 중앙 RELU 
 - Node.js 20.11 이상과 검증된 RELU checkout/release
 - `config/local.json`
 - 중앙 bridge control credential
-- Perfetto/browser service별 connector credential
+- browser service별 connector credential
 - 명시적 loopback port와 server lifecycle
 
 운영자가 중앙 bridge를 초기화하고 credential manager에서 audience별 값을 주입한다.
@@ -162,13 +162,13 @@ node "$RELU_BRIDGE_ROOT/bin/relu-ai-bridge.mjs" init \
 
 export RELU_AI_BRIDGE_CONFIG="$PWD/config/local.json"
 export RELU_AI_BRIDGE_TOKEN="$(approved-secret-command)"
-export RELU_PERFETTO_CONNECTOR_TOKEN="$(approved-perfetto-secret-command)"
 node "$RELU_BRIDGE_ROOT/bin/relu-ai-bridge.mjs" doctor
 node "$RELU_BRIDGE_ROOT/bin/relu-ai-bridge.mjs" serve
 ```
 
 Credential literal을 repository, project `.mcp.json`, shell script, ticket 또는 chat에 넣지
-않는다. Control/Perfetto/service/API credential은 audience별로 분리한다.
+않는다. 일반 browser의 control/service/API credential은 audience별로 분리한다. Perfetto
+credential은 전용 Native Host가 실행마다 생성한다.
 
 중앙 bridge를 Claude Code project에 연결할 때만 Streamable HTTP MCP 항목을 사용한다.
 
@@ -259,10 +259,18 @@ Desktop EndViewer:
 - [ ] managed MCP 장비는 IT가 안정된 서명 경로를 사전 등록한다.
 - [ ] `CurrentUserOnly` pipe와 executable 서명/경로 ACL을 검증했다.
 
-Perfetto/browser 중앙 bridge:
+Perfetto Extension/Native Host:
+
+- [ ] 회사 Perfetto exact origin과 signed Extension ID가 config/정책에 고정됐다.
+- [ ] Perfetto URL을 열면 content script와 Native Host가 자동 시작된다.
+- [ ] 사용자에게 token 또는 별도 Bridge 실행을 요구하지 않는다.
+- [ ] REF/DUT 여러 탭이 한 Host/port와 분리된 tab context로 나타난다.
+- [ ] `relu-perfetto`는 같은 Native Host 실행 파일의 stdio mode를 가리킨다.
+
+일반 browser 중앙 bridge:
 
 - [ ] loopback server의 PID/port ownership과 `/health`를 확인했다.
-- [ ] 중앙 control, Perfetto, service/API credential을 분리했다.
+- [ ] 중앙 control과 service/API credential을 분리했다.
 - [ ] 중앙 설정이나 project MCP 파일에 credential literal이 없다.
 - [ ] exact Origin과 Data Plane allowlist를 검토했다.
 - [ ] loopback endpoint를 claude.ai 원격 connector에 등록하지 않았다.

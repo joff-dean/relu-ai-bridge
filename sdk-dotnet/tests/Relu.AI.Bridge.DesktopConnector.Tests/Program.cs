@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Relu.AI.Bridge.DesktopConnector;
 using Relu.AI.Bridge.DesktopConnector.Internal;
+using PerfettoHostProgram = Relu.AI.Bridge.PerfettoNativeHost.Program;
 
 if (args.Length == 1 && args[0] == "--relu-registration-environment-probe")
 {
@@ -14,6 +15,29 @@ if (args.Length == 1 && args[0] == "--relu-registration-environment-probe")
     var visibleState = Environment.GetEnvironmentVariable("RELU_REGISTRAR_TEST_VISIBLE") ?? "absent";
     Console.Write($"{secretState}|{visibleState}");
     return;
+}
+
+var nativeHostTestDirectory = Path.Combine(Path.GetTempPath(), $"relu-native-host-test-{Guid.NewGuid():N}");
+Directory.CreateDirectory(nativeHostTestDirectory);
+try
+{
+    var nativeHostConfigurationPath = Path.Combine(nativeHostTestDirectory, "config.json");
+    await File.WriteAllTextAsync(nativeHostConfigurationPath, """
+        {"version":1,"extensionId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","perfettoOrigin":"https://perfetto.company.example","bridgePort":5746}
+        """);
+    var nativeHostConfiguration = await PerfettoHostProgram.NativeHostConfiguration.LoadAsync(nativeHostConfigurationPath);
+    Equal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", nativeHostConfiguration.ExtensionId, "native host exact Extension id");
+    Equal("https://perfetto.company.example", nativeHostConfiguration.PerfettoOrigin, "native host exact Perfetto origin");
+    await File.WriteAllTextAsync(nativeHostConfigurationPath, """
+        {"version":1,"extensionId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","perfettoOrigin":"https://perfetto.company.example/path","bridgePort":5746}
+        """);
+    await RejectAsync<InvalidDataException>(
+        () => PerfettoHostProgram.NativeHostConfiguration.LoadAsync(nativeHostConfigurationPath),
+        "native host rejects non-origin page policy");
+}
+finally
+{
+    Directory.Delete(nativeHostTestDirectory, recursive: true);
 }
 
 var context = new MutableContextProvider("selection-1");

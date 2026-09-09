@@ -43,16 +43,35 @@ test('extension authenticates an exact 127.0.0.1 origin without a raw bearer req
   assert.throws(() => bridgeApiUrl('http://127.0.0.1:5746', '/\\evil.example/leak'), /path/u);
 });
 
-test('Perfetto plugin keeps its connector token in page memory only', async () => {
+test('Perfetto plugin uses only the dedicated Extension transport', async () => {
   const source = await fs.readFile(new URL('../plugin/io.company.RELUPerfettoBridge/index.ts', import.meta.url), 'utf8');
   const bootstrap = await fs.readFile(new URL('../plugin/io.company.RELUPerfettoBridge/bootstrap.ts', import.meta.url), 'utf8');
+  const socket = await fs.readFile(new URL('../plugin/io.company.RELUPerfettoBridge/extension_socket.ts', import.meta.url), 'utf8');
+  const client = await fs.readFile(new URL('../plugin/io.company.RELUPerfettoBridge/bridge_client.ts', import.meta.url), 'utf8');
   assert.match(source, /private static bridgeToken = '';/u);
-  assert.doesNotMatch(`${source}\n${bootstrap}`, /#BridgeToken|bridgeTokenSetting|localStorage|sessionStorage|\.set\(token\)/u);
+  assert.doesNotMatch(`${source}\n${bootstrap}\n${socket}`, /#BridgeToken|bridgeTokenSetting|localStorage|sessionStorage|\.set\(token\)/u);
   assert.doesNotMatch(source, /Perfetto connector 전용 token/u);
-  assert.match(bootstrap, /PERFETTO_BOOTSTRAP_PATH = '\/relu\/perfetto-bootstrap'/u);
-  assert.match(bootstrap, /method: 'POST'/u);
-  assert.match(bootstrap, /cache: 'no-store'/u);
-  assert.match(bootstrap, /endpoint: `ws:\/\/\$\{pageLocation\.hostname\}:\$\{pageLocation\.port\}\/perfetto\/ws`/u);
+  assert.match(bootstrap, /type: 'bootstrap\.request'/u);
+  assert.match(source, /new PerfettoExtensionSocket\(/u);
+  assert.doesNotMatch(client, /new WebSocket/u);
+  assert.match(socket, /type: 'socket\.open'/u);
+});
+
+test('dedicated Perfetto Extension auto-injects and starts only the fixed Native Host', async () => {
+  const manifest = JSON.parse(await fs.readFile(new URL('../perfetto-extension/manifest.json', import.meta.url), 'utf8'));
+  const policy = await fs.readFile(new URL('../perfetto-extension/policy.js', import.meta.url), 'utf8');
+  const background = await fs.readFile(new URL('../perfetto-extension/background.js', import.meta.url), 'utf8');
+  const content = await fs.readFile(new URL('../perfetto-extension/content.js', import.meta.url), 'utf8');
+  assert.equal(manifest.manifest_version, 3);
+  assert.deepEqual(manifest.permissions, ['nativeMessaging']);
+  assert.deepEqual(manifest.host_permissions, ['ws://127.0.0.1/*']);
+  assert.equal(manifest.content_scripts[0].run_at, 'document_start');
+  assert.equal(manifest.content_scripts[0].all_frames, false);
+  assert.match(policy, /com\.relu_ai_bridge\.perfetto/u);
+  assert.match(background, /chrome\.runtime\.connectNative\(NATIVE_HOST_NAME\)/u);
+  assert.match(background, /extension-ws/u);
+  assert.doesNotMatch(`${background}\n${content}`, /eval\s*\(|new\s+Function\s*\(/u);
+  assert.doesNotMatch(`${background}\n${content}`, /localStorage|sessionStorage|chrome\.storage/u);
 });
 
 test('viewer integrations expose MCP without embedding an AI panel or CLI runner', async () => {

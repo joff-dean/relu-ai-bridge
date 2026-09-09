@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const RUNTIME_DIRECTORY = 'relu-ai-bridge-runtime';
-const RUNTIME_FILENAME = 'perfetto-local-v1.json';
+const RUNTIME_FILENAME = 'perfetto-extension-v1.json';
 const MAX_RUNTIME_BYTES = 8192;
 const EXPECTED_KEYS = ['bridgeUrl', 'bridgeVersion', 'createdAt', 'instanceId', 'pid', 'token', 'version'];
 
@@ -96,7 +96,7 @@ export async function publishPerfettoRuntime(descriptor, runtimeFile = perfettoR
   try {
     const existing = await readPerfettoRuntime(runtimeFile);
     if (existing.instanceId !== value.instanceId && processIsAlive(existing.pid)) {
-      throw new Error('Another live Perfetto local stack owns the Codex runtime descriptor');
+      throw new Error('Another live Perfetto Native Host owns the runtime descriptor');
     }
     replaced = existing;
   } catch (error) {
@@ -112,7 +112,7 @@ export async function publishPerfettoRuntime(descriptor, runtimeFile = perfettoR
         throw new Error('Perfetto runtime descriptor changed before replacement');
       }
       if (current.instanceId !== value.instanceId && processIsAlive(current.pid)) {
-        throw new Error('Another live Perfetto local stack owns the Codex runtime descriptor');
+        throw new Error('Another live Perfetto Native Host owns the runtime descriptor');
       }
       await fs.unlink(runtimeFile);
     }
@@ -137,5 +137,5 @@ export async function removePerfettoRuntime(instanceId, runtimeFile = perfettoRu
 }
 
 export function assertPerfettoRuntimeOwner(runtime) {
-  if (!processIsAlive(runtime.pid)) throw new Error('Perfetto local stack is not running');
+  if (!processIsAlive(runtime.pid)) throw new Error('Perfetto Native Host is not running');
 }

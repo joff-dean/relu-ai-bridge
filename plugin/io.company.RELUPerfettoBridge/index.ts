@@ -1,13 +1,10 @@
 // Copyright (c) 2026. All rights reserved.
 
-import {z} from 'zod';
-import type {App} from '../../public/app';
 import type {PerfettoPlugin} from '../../public/plugin';
-import type {Setting} from '../../public/settings';
 import type {Trace} from '../../public/trace';
-import {type TraceRole} from '../../perfetto_adapter/protocol';
 import {PerfettoV58Adapter} from '../../perfetto_adapter/v58';
 import {loadPerfettoBootstrap} from './bootstrap';
+import {PerfettoExtensionSocket} from './extension_socket';
 import {
   PerfettoBridgeClient,
   type BridgeConnectionStatus,
@@ -15,97 +12,43 @@ import {
 
 const PLUGIN_ID = 'io.company.RELUPerfettoBridge';
 const PLUGIN_VERSION = '0.7.0';
-const COMMAND_SOURCE = 'RELU AI Bridge · Perfetto';
 
 export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
   static readonly id = PLUGIN_ID;
   static readonly description =
     'RELU AI Bridge를 통해 REF/DUT trace 분석과 화면 선택을 제공하는 Perfetto 플러그인';
 
-  private static autoConnectSetting: Setting<boolean>;
   private static bridgeToken = '';
   private static bridgeEndpoint = '';
 
   private trace?: Trace;
   private adapter?: PerfettoV58Adapter;
   private bridge?: PerfettoBridgeClient;
+  private bootstrapRetryTimer?: number;
   private traceInstanceClientId?: string;
   private status: BridgeConnectionStatus = {
     state: 'disconnected',
     reconnectAttempt: 0,
   };
 
-  static onActivate(app: App): void {
-    ReluPerfettoBridgePlugin.autoConnectSetting = app.settings.register({
-      id: `${PLUGIN_ID}#AutoConnect`,
-      name: 'RELU AI Bridge 자동 연결',
-      description:
-        '동일 출처 RELU local stack에서 runtime credential을 받아 새 trace를 자동 연결합니다.',
-      schema: z.boolean(),
-      defaultValue: true,
-    });
-  }
-
   async onTraceLoad(trace: Trace): Promise<void> {
     this.trace = trace;
     this.traceInstanceClientId = newClientId();
     this.adapter = new PerfettoV58Adapter(trace);
-    this.registerCommands(trace);
     this.registerStatusItem(trace);
 
     trace.trash.defer(() => {
       this.bridge?.dispose();
+      if (this.bootstrapRetryTimer !== undefined) {
+        window.clearTimeout(this.bootstrapRetryTimer);
+      }
       this.bridge = undefined;
       this.trace = undefined;
       this.adapter = undefined;
       this.traceInstanceClientId = undefined;
     });
 
-    if (ReluPerfettoBridgePlugin.autoConnectSetting.get()) {
-      try {
-        await this.connect();
-      } catch (error) {
-        console.error('RELU AI Bridge 자동 연결 실패', error);
-      }
-    }
-  }
-
-  private registerCommands(trace: Trace): void {
-    trace.commands.registerCommand({
-      id: `${PLUGIN_ID}.Connect`,
-      name: 'RELU AI Bridge 연결',
-      source: COMMAND_SOURCE,
-      callback: async () => this.connect(),
-    });
-
-    trace.commands.registerCommand({
-      id: `${PLUGIN_ID}.Disconnect`,
-      name: 'RELU AI Bridge 연결 해제',
-      source: COMMAND_SOURCE,
-      callback: () => this.bridge?.disconnect(),
-    });
-
-    trace.commands.registerCommand({
-      id: `${PLUGIN_ID}.AttachSession`,
-      name: '현재 trace를 REF/DUT 세션에 연결',
-      source: COMMAND_SOURCE,
-      callback: async () => {
-        const sessionId = await trace.omnibox.prompt(
-          '연결할 RELU AI Bridge session ID',
-        );
-        if (sessionId === undefined || sessionId.trim() === '') return;
-        const role = await trace.omnibox.prompt('이 trace의 역할', [
-          'REF',
-          'DUT',
-        ]);
-        if (role !== 'REF' && role !== 'DUT') return;
-        this.requireBridge().requestSessionAttach(
-          sessionId.trim(),
-          role as TraceRole,
-          trace.traceInfo.traceTitle,
-        );
-      },
-    });
+    void this.connectAutomatically();
   }
 
   private registerStatusItem(trace: Trace): void {
@@ -118,18 +61,22 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
         return {
           label: `RELU: ${statusLabel(this.status)}${sessionLabel}`,
           icon: this.status.state === 'connected' ? 'link' : 'link_off',
-          onclick: () => {
-            if (this.status.state === 'connected') {
-              this.bridge?.disconnect();
-            } else {
-              void this.connect().catch((error) => {
-                console.error('RELU AI Bridge 연결 실패', error);
-              });
-            }
-          },
         };
       },
     });
+  }
+
+  private async connectAutomatically(): Promise<void> {
+    try {
+      await this.connect();
+    } catch (error) {
+      console.error('RELU AI Bridge 자동 연결 실패', error);
+      if (!this.trace || this.bootstrapRetryTimer !== undefined) return;
+      this.bootstrapRetryTimer = window.setTimeout(() => {
+        this.bootstrapRetryTimer = undefined;
+        void this.connectAutomatically();
+      }, 3000);
+    }
   }
 
   private async connect(): Promise<void> {
@@ -160,6 +107,12 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
       pluginId: PLUGIN_ID,
       pluginVersion: PLUGIN_VERSION,
       adapter: this.adapter,
+      socketFactory: (endpoint) => new PerfettoExtensionSocket(
+        endpoint,
+        globalThis.window,
+        globalThis.location.origin,
+        () => this.handleBootstrapInvalidated(),
+      ),
       onStatus: (status) => {
         this.status = status;
         this.trace?.raf.scheduleFullRedraw();
@@ -168,13 +121,18 @@ export default class ReluPerfettoBridgePlugin implements PerfettoPlugin {
     return this.bridge;
   }
 
-  private requireBridge(): PerfettoBridgeClient {
-    const bridge = this.bridge;
-    if (!bridge || bridge.getStatus().state !== 'connected') {
-      throw new Error('RELU AI Bridge에 먼저 연결하세요.');
-    }
-    return bridge;
+  private handleBootstrapInvalidated(): void {
+    ReluPerfettoBridgePlugin.bridgeToken = '';
+    ReluPerfettoBridgePlugin.bridgeEndpoint = '';
+    this.bridge?.dispose();
+    this.bridge = undefined;
+    if (!this.trace || this.bootstrapRetryTimer !== undefined) return;
+    this.bootstrapRetryTimer = window.setTimeout(() => {
+      this.bootstrapRetryTimer = undefined;
+      void this.connectAutomatically();
+    }, 250);
   }
+
 }
 
 function statusLabel(status: BridgeConnectionStatus): string {

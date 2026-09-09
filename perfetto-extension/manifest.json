@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "RELU Perfetto Connector",
+  "version": "0.7.0",
+  "description": "Automatically connects the approved company Perfetto page to desktop AI clients.",
+  "permissions": ["nativeMessaging"],
+  "host_permissions": ["ws://127.0.0.1/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://perfetto.invalid/*"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": false,
+      "world": "ISOLATED"
+    }
+  ]
+}

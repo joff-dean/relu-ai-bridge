@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {
   assertPerfettoRuntimeOwner,
   readPerfettoRuntime,
-} from '../../src/perfetto-codex-runtime.mjs';
+} from '../../src/perfetto-runtime.mjs';
 
 const MAX_INPUT_BYTES = 2 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -58,7 +58,7 @@ async function verifyBridge(runtime, fetchImpl) {
   }
 }
 
-export async function createCodexMcpRelay({runtimeFile, fetchImpl = fetch} = {}) {
+export async function createDesktopMcpRelay({runtimeFile, fetchImpl = fetch} = {}) {
   const runtime = await readPerfettoRuntime(runtimeFile);
   await verifyBridge(runtime, fetchImpl);
   let sessionId = null;
@@ -124,8 +124,8 @@ function protocolError(id, message) {
   return {jsonrpc: '2.0', id: id ?? null, error: {code: -32603, message}};
 }
 
-export async function runCodexMcpProxy({input = process.stdin, output = process.stdout, error = process.stderr} = {}) {
-  const relay = await createCodexMcpRelay();
+export async function runDesktopMcpProxy({input = process.stdin, output = process.stdout, error = process.stderr} = {}) {
+  const relay = await createDesktopMcpRelay();
   let buffered = Buffer.alloc(0);
   let chain = Promise.resolve();
   let closed = false;
@@ -149,7 +149,7 @@ export async function runCodexMcpProxy({input = process.stdin, output = process.
     buffered = Buffer.concat([buffered, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
     if (buffered.length > MAX_INPUT_BYTES) {
       closed = true;
-      error.write('RELU Codex MCP input exceeded the local size limit\n');
+      error.write('RELU desktop MCP input exceeded the local size limit\n');
       input.destroy();
       return;
     }
@@ -172,8 +172,8 @@ export async function runCodexMcpProxy({input = process.stdin, output = process.
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
-  runCodexMcpProxy().catch((failure) => {
-    process.stderr.write(`RELU Codex MCP proxy failed: ${failure.message}\n`);
+  runDesktopMcpProxy().catch((failure) => {
+    process.stderr.write(`RELU desktop MCP proxy failed: ${failure.message}\n`);
     process.exitCode = 1;
   });
 }

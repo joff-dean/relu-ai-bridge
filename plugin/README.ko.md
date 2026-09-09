@@ -22,27 +22,23 @@ barrel 수정은 필요 없다. 다만 이 플러그인은 upstream 기본 플�
 
 두 번째 방법은 사내 배포본에서 자동 활성화가 필요할 때만 사용한다.
 
-## 사용자 명령
+## 자동 연결
 
-플러그인을 활성화하면 command palette에 다음 명령이 등록된다.
-
-- `RELU AI Bridge 연결`: 같은 origin의 RELU local stack을 찾아 즉시 연결한다.
-- `RELU AI Bridge 연결 해제`: 자동 재연결을 중지하고 연결을 닫는다.
-- `현재 trace를 REF/DUT 세션에 연결`: session ID와 역할을 선택해 bridge에
-  attach 요청을 보낸다.
+플러그인은 trace가 열리면 배포된 Extension/Native Host에 자동 연결하고 transient bootstrap
+실패도 자동 재시도한다. 수동 연결·연결 해제·token·session attach 명령은 없다. REF/DUT
+session 배정, 분석, 화면 이동과 취소는 Codex/Claude 데스크톱 앱의 MCP 도구로 수행한다.
 
 플러그인은 AI 채팅 패널이나 CLI runner를 포함하지 않는다. 분석과 후속 대화는 연결된
 Codex/Claude 데스크톱 앱에서 수행한다. 사용자가 AI 앱에서 특정 REF/DUT 근거 이동을
 요청하면 `perfetto_select_area`가 이 플러그인의 실제 `trace.selection.selectArea`를 호출해
 현재 탭을 focus한다.
 
-`scripts/perfetto/run-local-stack.sh`로 실행하면 플러그인은 고정된
-`POST /relu/perfetto-bootstrap`에서 runtime connector credential을 자동으로 받고,
-현재 Perfetto 페이지의 JavaScript 메모리에만 둔다. endpoint도 응답이나 설정에서
-받지 않고 현재 exact `http://127.0.0.1:<port>` origin의 `/perfetto/ws`로 파생한다.
-token 입력 UI, localStorage, sessionStorage, Perfetto token setting과 URL query는 없다.
-페이지 reload 때는 같은 runtime bootstrap에서 다시 받고, 런처 종료 시 credential도
-폐기된다. 상태 표시줄의 RELU 항목에서 연결 상태와 session/role을 확인할 수 있다.
+사내 exact Perfetto origin으로 빌드된 Chrome Extension은 페이지 시작 시 자동 주입된다.
+플러그인은 Extension에 bootstrap을 요청하고 Chrome이 자동 시작한 Native Host의 ephemeral
+connector credential을 현재 페이지 JavaScript 메모리에만 둔다. token 입력 UI,
+localStorage, sessionStorage, Perfetto token setting과 URL query는 없다. 페이지 reload 때는
+Extension에서 다시 받고 Chrome의 Native Messaging 연결이 끝나면 credential도 폐기된다.
+상태 표시줄의 RELU 항목에서 연결 상태와 session/role을 확인할 수 있다.
 
 bridge의 durable session assignment는 같은 trace plugin instance의 WebSocket
 재연결 뒤에는 복원되지만 page reload나 trace 재오픈 뒤에는 상속되지
@@ -54,16 +50,16 @@ client ID에 포함하지 않는다.
 
 ## 보안 경계
 
-- endpoint는 현재 UI와 같은 port의 `ws://127.0.0.1:<port>/perfetto/ws`만 사용한다.
-- local stack은 WebSocket을 내부 Bridge port로 전달하되 browser에는 같은 origin만
-  노출한다.
+- plugin은 page WebSocket을 직접 만들지 않고 격리된 Extension message channel만 사용한다.
+- Extension background만 Native Host가 발급한
+  `ws://127.0.0.1:<port>/perfetto/extension-ws` endpoint를 검증하고 연결한다.
 - URL credential, query, fragment, `localhost`, LAN 주소, 외부 hostname은
   거부한다.
 - 전용 Perfetto connector token은 실행마다 control/MCP token과 다르게 발급하며,
   source code·setting·browser storage·URL·로그에 저장하지 않고 현재 페이지 메모리에만 둔다.
-- bootstrap은 exact Host/Origin과 same-origin Fetch Metadata를 요구하는 bounded POST이며
-  `no-store`로 응답한다. Browser가 보낸 trace 내용이나 모델 인자는 credential 발급
-  조건과 endpoint를 바꿀 수 없다.
+- bootstrap은 exact page origin용 content script와 고정 Native Host 사이의 bounded
+  Native Messaging 계약이다. Browser가 보낸 trace 내용이나 모델 인자는 credential 발급
+  조건, endpoint, Extension ID 또는 capability를 바꿀 수 없다.
 - token 원문은 WebSocket으로 전송하지 않는다. 양쪽 fresh 256-bit nonce, exact page
   Origin, plugin ID 및 client/trace descriptor에 domain-separated HMAC-SHA-256
   proof를 계산하는 데만 사용한다.

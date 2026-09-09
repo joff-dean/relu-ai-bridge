@@ -20,7 +20,6 @@ import {
   type ServerMessage,
   type SessionAttachParams,
   type TraceQueryParams,
-  type TraceRole,
 } from '../../perfetto_adapter/protocol';
 
 const MAX_INBOUND_MESSAGE_CHARS = 1_048_576;
@@ -46,7 +45,7 @@ export interface BridgeConnectionStatus {
   readonly reconnectAttempt: number;
 }
 
-interface BridgeSocket {
+export interface BridgeSocket {
   readonly readyState: number;
   onopen: (() => void) | null;
   onmessage: ((event: MessageEvent<unknown>) => void) | null;
@@ -66,7 +65,7 @@ export interface PerfettoBridgeClientOptions {
   readonly pluginVersion: string;
   readonly adapter: PerfettoV58Adapter;
   readonly onStatus?: (status: BridgeConnectionStatus) => void;
-  readonly socketFactory?: (url: string) => BridgeSocket;
+  readonly socketFactory: (url: string) => BridgeSocket;
   /** Deterministic unit-test seam. Production plugin은 기본 Web Crypto만 사용한다. */
   readonly authCrypto?: PerfettoAuthCrypto;
 }
@@ -146,35 +145,15 @@ export class PerfettoBridgeClient {
     this.disconnect();
   }
 
-  requestSessionAttach(
-    sessionId: string,
-    role: TraceRole,
-    displayName?: string,
-  ): void {
-    const params = validateSessionAttachParams({
-      sessionId,
-      role,
-      displayName,
-    });
-    if (!this.authenticated) {
-      throw new Error('브리지 인증 연결 후 세션에 연결할 수 있습니다.');
-    }
-    this.sendEvent('session.attach_requested', params as unknown as JsonValue);
-  }
-
   private openSocket(isReconnect: boolean): void {
     if (this.socket && this.socket.readyState <= SOCKET_OPEN) return;
 
     this.authenticated = false;
     this.handshake = {phase: 'idle'};
     this.updateStatus(isReconnect ? 'reconnecting' : 'connecting');
-    const socketFactory =
-      this.options.socketFactory ??
-      ((url: string) => new WebSocket(url) as unknown as BridgeSocket);
-
     let socket: BridgeSocket;
     try {
-      socket = socketFactory(
+      socket = this.options.socketFactory(
         validateLoopbackBridgeUrl(this.options.endpoint).toString(),
       );
     } catch (error) {

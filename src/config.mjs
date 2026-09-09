@@ -399,7 +399,7 @@ export async function loadConfig(options = {}) {
   if (allowedChromeExtensionIds.some((id) => !/^[a-p]{32}$/u.test(id))) {
     throw new Error('server.allowedChromeExtensionIds must contain 32-character Chrome extension ids');
   }
-  const perfettoEnabled = bool(raw.perfetto?.enabled, true);
+  const perfettoEnabled = bool(raw.perfetto?.enabled, false);
   const connectorEnabled = bool(raw.connectors?.enabled, true);
   if (token.length < 24) {
     throw new Error('RELU_AI_BRIDGE_TOKEN must contain at least 24 characters');
@@ -486,8 +486,8 @@ export async function loadConfig(options = {}) {
       throw new Error('Remote goal evaluator credential must be different from every bridge and connector credential');
     }
   }
-  if ((perfetto.websocketPath ?? '/perfetto/ws') !== '/perfetto/ws') {
-    throw new Error('perfetto.websocketPath is fixed to /perfetto/ws by the v58 plugin security contract');
+  if (perfetto.websocketPath !== undefined) {
+    throw new Error('perfetto.websocketPath is removed; the Extension transport is fixed to /perfetto/extension-ws');
   }
   const allowedPluginIds = (perfetto.allowedPluginIds ?? ['io.company.RELUPerfettoBridge']).map(String);
   if (allowedPluginIds.length === 0 || allowedPluginIds.some((id) => !/^[a-zA-Z0-9._-]{3,200}$/u.test(id))) {
@@ -498,12 +498,11 @@ export async function loadConfig(options = {}) {
   if (allowedSqlFunctions.some((name) => !/^[a-z_][a-z0-9_]*$/u.test(name))) {
     throw new Error('perfetto.allowedSqlFunctions contains an invalid function name');
   }
-  const allowedPerfettoOriginsRaw = perfetto.allowedOrigins ?? [
-    'http://127.0.0.1:10000',
-    'http://localhost:10000',
-  ];
-  if (!Array.isArray(allowedPerfettoOriginsRaw) || allowedPerfettoOriginsRaw.length === 0 || allowedPerfettoOriginsRaw.length > 32) {
-    throw new Error('perfetto.allowedOrigins must contain 1 to 32 exact origins');
+  const allowedPerfettoOriginsRaw = perfetto.allowedOrigins ?? [];
+  if (!Array.isArray(allowedPerfettoOriginsRaw)
+    || allowedPerfettoOriginsRaw.length > 1
+    || (perfettoEnabled && allowedPerfettoOriginsRaw.length !== 1)) {
+    throw new Error('enabled perfetto.allowedOrigins must contain exactly one HTTP(S) origin');
   }
   const allowedPerfettoOrigins = allowedPerfettoOriginsRaw.map((origin) => {
     if (typeof origin !== 'string' || Buffer.byteLength(origin) > 2048) {
@@ -586,7 +585,7 @@ export async function loadConfig(options = {}) {
       enabled: perfettoEnabled,
       tokenEnv: perfettoTokenEnv,
       token: perfettoEnabled ? perfettoTokenValue : undefined,
-      websocketPath: '/perfetto/ws',
+      extensionWebsocketPath: '/perfetto/extension-ws',
       allowedOrigins: [...new Set(allowedPerfettoOrigins)],
       requestTimeoutMs: boundedPositiveInteger(perfetto.requestTimeoutMs, 30_000, 60_000, 'perfetto.requestTimeoutMs'),
       maxConcurrentRequests: boundedPositiveInteger(perfetto.maxConcurrentRequests, 32, 64, 'perfetto.maxConcurrentRequests'),
@@ -665,6 +664,5 @@ export async function createInitialConfig(target, projectRoot) {
   return {
     configPath: resolvedTarget,
     token: randomId('relu_'),
-    perfettoToken: randomId('relu_perfetto_'),
   };
 }

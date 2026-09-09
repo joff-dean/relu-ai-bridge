@@ -165,12 +165,12 @@ node /absolute/path/to/relu-ai-bridge/bin/relu-ai-bridge.mjs archive-ledger
 이 도구 계약은 공식 Perfetto `v58.2`와 RELU `v58` adapter만 지원한다. 다른 Perfetto
 기준선이나 이전 adapter alias는 자동 선택하거나 fallback하지 않는다.
 
-개발용 `run-local-stack.sh`에서는 플러그인이 동일 출처 bootstrap으로 자동 연결되므로
-사용자가 connector token을 입력하지 않는다. `--instances 2`로 띄운 REF/DUT UI는
-서로 다른 `clientId`로 같은 Bridge에 나타나며, 아래 session attach 계약은 그대로다.
-Runtime bootstrap은 MCP 도구·권한을 추가하지 않고 server-owned 도구 계약도 바꾸지 않는다.
-공식 Codex가 발견되면 launcher는 user-scope `relu-perfetto` stdio MCP를 idempotent하게
-등록한다. 최초 한 번 Codex를 재시작한 뒤 새 task에서 “연결된 Perfetto 목록을 보여줘”,
+회사 origin 전용 Extension은 Perfetto 페이지의 `document_start`에 자동 주입되고 Chrome이
+user-scope Native Host를 자동 시작한다. 사용자는 Bridge나 token을 수동으로 실행·입력하지
+않는다. 여러 REF/DUT 탭은 서로 다른 `clientId`와 socket으로 하나의 Native Host/Bridge에
+나타나며 아래 session attach 계약은 그대로다. Bootstrap은 MCP 도구·권한을 추가하지 않고
+server-owned 도구 계약도 바꾸지 않는다. 설치 시 같은 Native Host 실행 파일이 user-scope
+`relu-perfetto` stdio MCP를 idempotent하게 등록한다. 최초 한 번 AI 앱을 재시작한 뒤 새 task에서 “연결된 Perfetto 목록을 보여줘”,
 “REF와 DUT를 attach하고 차이를 분석해줘”처럼 요청하면 아래 도구가 호출된다. Perfetto에는
 AI prompt, 분석 side panel 또는 CLI child runner가 없다. 여러 UI는 각자의 `clientId`로
 구분되고 분석 대화·후속 요청·취소는 데스크톱 AI 앱의 task가 소유한다.

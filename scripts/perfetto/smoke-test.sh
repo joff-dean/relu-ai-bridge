@@ -251,7 +251,6 @@ require_unique_regex(web_connector_code, r"\bthis\.connectorVersion[ \t]*=", "we
 require_unique_regex(dotnet_embedded_code, r'^[ \t]*string[ \t]+version[ \t]*=', ".NET embedded service version declaration count", re.MULTILINE)
 require_unique_regex(plugin_code, r"^[ \t]*const PLUGIN_ID = 'io\.company\.RELUPerfettoBridge';[ \t]*$", "Perfetto plugin id", re.MULTILINE)
 require_unique_regex(plugin_code, rf"^[ \t]*const PLUGIN_VERSION = '{version}';[ \t]*$", "Perfetto plugin version", re.MULTILINE)
-require_unique_regex(plugin_code, r"^[ \t]*const COMMAND_SOURCE = 'RELU AI Bridge · Perfetto';[ \t]*$", "Perfetto plugin branding", re.MULTILINE)
 require_unique_regex(plugin_code, r"^[ \t]*static readonly id = PLUGIN_ID;[ \t]*$", "Perfetto plugin id binding", re.MULTILINE)
 require_unique_regex(plugin_code, r"^[ \t]*pluginVersion: PLUGIN_VERSION,[ \t]*$", "Perfetto plugin version binding", re.MULTILINE)
 require_unique_regex(mcp_code, rf"serverInfo:\s*\{{\s*name:\s*'relu-ai-bridge',\s*version:\s*'{version}'\s*\}}", "MCP serverInfo")
@@ -303,6 +302,23 @@ plugin_id=$(compat_value integration.plugin_id)
 grep -Fq "'$plugin_id'" \
   "$PERFETTO_PROJECT_ROOT/$(compat_value integration.source_plugin_path)/index.ts" || \
   die "plugin ID와 compatibility contract가 다릅니다"
+
+perfetto_extension_manifest="$PERFETTO_PROJECT_ROOT/perfetto-extension/manifest.json"
+perfetto_extension_background="$PERFETTO_PROJECT_ROOT/perfetto-extension/background.js"
+perfetto_native_host="$PERFETTO_PROJECT_ROOT/sdk-dotnet/src/Relu.AI.Bridge.PerfettoNativeHost/Program.cs"
+[ -f "$perfetto_extension_manifest" ] || die "Perfetto Extension manifest가 없습니다"
+[ -f "$perfetto_extension_background" ] || die "Perfetto Extension background가 없습니다"
+[ -f "$perfetto_native_host" ] || die "Perfetto Native Host source가 없습니다"
+grep -Fq '"name": "RELU Perfetto Connector"' "$perfetto_extension_manifest" || \
+  die "Perfetto Extension identity가 다릅니다"
+grep -Fq '"version": "0.7.0"' "$perfetto_extension_manifest" || \
+  die "Perfetto Extension version이 다릅니다"
+grep -Fq 'chrome.runtime.connectNative(NATIVE_HOST_NAME)' "$perfetto_extension_background" || \
+  die "Perfetto Extension Native Host 자동 시작 계약이 없습니다"
+grep -Fq 'extension-ws' "$perfetto_extension_background" || \
+  die "Perfetto Extension WebSocket boundary가 다릅니다"
+grep -Fq 'ReluMcpStdioEntryPoint.IsStdioMode(args)' "$perfetto_native_host" || \
+  die "Perfetto Native Host same-executable MCP mode가 없습니다"
 
 if [ "$#" -eq 1 ]; then
   perfetto_dir=$(canonical_existing_dir "$1")
