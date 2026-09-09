@@ -115,10 +115,6 @@ export interface BridgeEvent {
     | 'bridge.pong'
     | 'session.attach_requested'
     | 'session.attached'
-    | 'analysis.start_requested'
-    | 'analysis.cancel_requested'
-    | 'analysis.cancel_all_requested'
-    | 'analysis.focus_requested'
     | 'trace.closing';
   readonly payload?: JsonValue;
 }
@@ -144,54 +140,7 @@ export interface BridgeHelloAck {
   readonly accepted: boolean;
   readonly connectionId?: string;
   readonly heartbeatMs?: number;
-  readonly analysisAvailable?: boolean;
   readonly error?: string;
-}
-
-export type AnalysisJobStatus =
-  | 'queued'
-  | 'running'
-  | 'cancel_requested'
-  | 'cancelled'
-  | 'completed'
-  | 'failed';
-
-export interface AnalysisEvidence {
-  readonly label: string;
-  readonly target: 'current' | 'ref' | 'dut';
-  readonly startNs: string;
-  readonly endNs: string;
-  readonly trackUris: ReadonlyArray<string>;
-}
-
-export interface AnalysisFinding {
-  readonly title: string;
-  readonly severity: 'info' | 'warning' | 'critical';
-  readonly explanation: string;
-  readonly evidence: ReadonlyArray<AnalysisEvidence>;
-}
-
-export interface AnalysisReport {
-  readonly summary: string;
-  readonly findings: ReadonlyArray<AnalysisFinding>;
-  readonly caveats: ReadonlyArray<string>;
-}
-
-export interface AnalysisJob {
-  readonly id: string;
-  readonly requestId: string;
-  readonly status: AnalysisJobStatus;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-  readonly selection: AreaSelectionDto;
-  readonly progress: string;
-  readonly report: AnalysisReport | null;
-  readonly error: string | null;
-}
-
-export interface BridgeAnalysisJobUpdate {
-  readonly type: 'analysis_job';
-  readonly job: AnalysisJob;
 }
 
 export interface BridgeRequest {
@@ -209,7 +158,6 @@ export interface BridgePing {
 export type ServerMessage =
   | BridgeAuthChallengeAck
   | BridgeHelloAck
-  | BridgeAnalysisJobUpdate
   | BridgeRequest
   | BridgePing;
 

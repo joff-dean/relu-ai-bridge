@@ -355,13 +355,12 @@ descriptor에서 control credential을 읽으므로 Codex 설정, 명령 인자,
 런처 종료 시 임시 config/data, descriptor와 credential도 제거된다. 기존의 별도 Bridge
 운영 설정은 위 중앙 bridge 빠른 시작 절차를 계속 사용한다.
 
-`--codex-cli`가 확인된 local stack에서는 Perfetto 상단의 side-panel toggle로 `RELU 분석`
-패널을 열고 닫을 수 있다. 패널은 trace load 때 등록만 되고 자동으로 열리지 않는다.
-`현재 선택 분석`은 클릭 순간의 trace binding, 시작/종료 timestamp와 track URI를 immutable
-job으로 복사하므로, 분석 중 사용자는 타임라인을 이동·확대하거나 다른 구간을 선택할 수
-있다. 작업별 `분석 중지`와 `모두 중지`는 Codex child와 후속 query를 중단하고 늦은 결과를
-폐기한다. 완료 결과의 `REF 보기`, `DUT 보기`, `이 구간 보기`는 사용자가 누를 때만 기존
-`perfetto_select_area` 승인·operation ledger 경로로 정확한 연결 탭을 focus한다.
+Perfetto와 WPF 안에는 별도 AI 채팅 패널이나 CLI runner를 넣지 않는다. 분석 대화, 후속
+질문과 작업 중지는 Codex/Claude 같은 데스크톱 AI 앱에서 수행한다. 사용자가 AI 앱에서
+“현재 선택 구간을 분석해줘”라고 요청하면 MCP가 현재 Context와 필요한 bounded 데이터를
+읽는다. 보고서의 `REF-1`, `DUT-2` 같은 근거는 browser URL이 아니다. “DUT-2 구간으로
+이동해줘”라고 요청했을 때만 AI client가 기존 `perfetto_select_area` 승인·operation ledger
+경로를 호출해 현재 연결된 실제 Perfetto 탭을 zoom/focus한다.
 
 REF/DUT처럼 여러 UI가 필요하면 Bridge 하나에 여러 instance를 띄운다.
 
@@ -391,12 +390,10 @@ copy overlay를 사용한다.
 
 REF와 DUT trace를 별도 UI에서 열고 MCP의 `perfetto_sessions`로 session에 배정한다. 권장 MCP 흐름은 `perfetto_clients`, `perfetto_sessions`, `perfetto_query`, `perfetto_align(applySelection:false)`, 결과 검토, `perfetto_align(applySelection:true)` 순서다. Trace 원본은 Bridge로 복사되지 않고 SQL은 각 UI의 Trace Processor에서 실행된다.
 
-패널 분석 runner는 검증된 Codex CLI만 argument array와 `shell:false`, read-only sandbox,
-ephemeral session, 전용 JSON output schema로 실행한다. User config의 다른 MCP는 로드하지
-않고 빈 사용자 전용 작업 디렉터리에서 runtime descriptor를 읽는 `relu-perfetto` stdio
-proxy만 주입한다. 최종 JSON은 사용자
-전용 runtime directory의 bounded 임시 파일에서 읽은 즉시 삭제되며 패널 결과는 page
-memory에만 유지된다.
+AI 앱은 분석 중에도 사용자의 추가 질문을 같은 task에서 받을 수 있다. 사용자가 Perfetto
+화면을 pan/zoom하거나 다른 구간을 선택해도 이미 읽어 둔 근거를 몰래 새 선택으로 바꾸지
+않으며, 새 선택을 분석하려면 Context revision을 다시 확인한다. “중지” 요청은 AI 앱의 현재
+작업을 취소한다. 뷰어 process가 별도 `codex`/`claude` child를 만들거나 대화를 보관하지 않는다.
 
 사내 fork를 외부 baseline으로 만들지 않는다. 공식 v58.2에서 Connector를 개발하고, 회사 버전 차이는 반입 시 company-only adapter/integration으로 분리한다.
 

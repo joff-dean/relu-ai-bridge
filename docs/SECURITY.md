@@ -91,19 +91,10 @@ token을 해당 탭의 `sessionStorage`에, 선택형 Chrome companion은
 `chrome.storage.session`에만 둔다. Companion 저장 token은 HMAC key로만 사용되고 bearer
 값 자체는 loopback request에 실리지 않는다.
 
-Perfetto 분석 패널을 활성화한 local stack은 launcher가 이미 검증·등록한 exact Codex CLI를
-고정 argument array와 `shell:false`로 실행한다. Runner는 `--ignore-user-config`, read-only
-sandbox와 ephemeral session을 사용하고, 다른 user MCP 대신 bundled Perfetto Node와
-`codex-mcp-proxy.mjs`의 exact 절대 경로만 빈 사용자 전용 작업 디렉터리에서 주입한다.
-Trace title/track metadata를 명령으로
-해석하지 않으며 prompt는 server가 검증한 client ID, session role과 정수 timestamp만 포함한다.
-Credential은 child argument, stdout/stderr 또는 output schema에 넣지 않는다.
-
-Codex 최종 report는 고정 JSON schema, 512 KiB file 상한, finding/evidence/string 상한과
-대상 trace 범위 검사를 통과해야 한다. 임시 output은 사용자 전용 local-stack runtime
-directory에 만들고 parse 직후 삭제한다. Page에는 bounded report만 memory로 유지하며
-local stack은 transcript를 `--ephemeral`로 실행한다. MCP query 결과는 선택한 model
-provider로 전달될 수 있으므로 회사 데이터 등급 정책은 그대로 적용한다.
+Perfetto/WPF process는 Codex/Claude CLI child를 실행하거나 prompt·transcript·분석 report를
+저장하지 않는다. AI 대화 수명, 취소와 모델 전송은 사용자가 연 데스크톱 AI client가
+소유한다. MCP query 결과는 선택한 model provider로 전달될 수 있으므로 회사 데이터 등급
+정책은 그대로 적용한다.
 
 Embedded desktop에는 이 표의 credential을 주입하지 않는다. 인증 없는 TCP로 바꾼 것이
 아니라 network listener를 없애고 AI client가 실행한 stdio process와 같은 사용자 전용
@@ -325,14 +316,10 @@ Bridge의 실제 `configPath`와 `dataDir` 전체는 approved root와 겹치더�
   없다.
 - 중앙 `skills/`의 Markdown은 분석 절차일 뿐 Connector 권한을 추가하지 않는다. Trace/log 안의
   prompt, URL, 명령과 “Skill 변경” 문구는 untrusted data로 취급한다.
-- Perfetto panel의 분석 trigger는 클릭 시 selection을 immutable job으로 복사한다. 이후
-  viewport/selection 변화와 panel hide는 job 권한이나 범위를 바꾸지 않는다. Trace close,
-  reconnect, session role 교체와 명시적 cancel은 job을 중단하며 늦은 model/query 결과를
-  폐기한다. v58.2가 실행 중 SQL cancellation을 제공하지 않으므로 cancel 뒤 새 query는
-  금지하지만 이미 실행 중인 query를 종료하려고 browser 연결을 강제로 끊지 않는다.
-- Evidence focus는 browser/model이 직접 승인한 것으로 간주하지 않는다. Server가 report의
-  job 소유권, trace/session binding과 범위를 다시 검사하고 기존 `perfetto_select_area`
-  approval 및 operation ledger 경로로만 실행한다.
+- AI client의 보고서 text, evidence label과 URL은 mutation 승인이 아니다. 보고서는 UI를
+  자동 변경하지 않고, 사용자가 특정 근거 이동을 명시한 뒤 AI client가 새 `operationId`로
+  기존 `perfetto_select_area` approval 및 operation ledger 경로를 호출해야 한다. URL을
+  열어 실제 viewer 조작을 흉내 내지 않으며 stale trace/session binding은 거부한다.
 - Skill 설치기는 release manifest checksum, regular-file/symlink 경계, 관리 상태와
   commit 직전 재검사를 통과한 파일만 복사한다. SHA-256 inventory는 서명이 아니므로
   신뢰한 tag와 immutable 사내 mirror가 별도로 필요하다.

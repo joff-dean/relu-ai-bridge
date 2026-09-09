@@ -54,3 +54,19 @@ test('Perfetto plugin keeps its connector token in page memory only', async () =
   assert.match(bootstrap, /cache: 'no-store'/u);
   assert.match(bootstrap, /endpoint: `ws:\/\/\$\{pageLocation\.hostname\}:\$\{pageLocation\.port\}\/perfetto\/ws`/u);
 });
+
+test('viewer integrations expose MCP without embedding an AI panel or CLI runner', async () => {
+  const plugin = await fs.readFile(new URL('../plugin/io.company.RELUPerfettoBridge/index.ts', import.meta.url), 'utf8');
+  const client = await fs.readFile(new URL('../plugin/io.company.RELUPerfettoBridge/bridge_client.ts', import.meta.url), 'utf8');
+  const broker = await fs.readFile(new URL('../src/perfetto-broker.mjs', import.meta.url), 'utf8');
+  const server = await fs.readFile(new URL('../src/server.mjs', import.meta.url), 'utf8');
+  const wpf = await fs.readFile(new URL('../examples/wpf-android-log-viewer/ReluWpfIntegration.cs', import.meta.url), 'utf8');
+  const perfettoInstructions = await fs.readFile(new URL('../skills/relu-analyze-selection/references/perfetto.md', import.meta.url), 'utf8');
+
+  const viewerSources = `${plugin}\n${client}\n${broker}\n${server}\n${wpf}`;
+  assert.doesNotMatch(viewerSources, /AnalysisPanel|analysis\.start_requested|analysis\.focus_requested|codex\s+exec/u);
+  assert.doesNotMatch(plugin, /sidePanel\.registerTab|OpenAnalysis/u);
+  assert.match(perfettoInstructions, /perfetto_select_area/u);
+  assert.match(perfettoInstructions, /URL로 출력하지 않는다/u);
+  assert.match(perfettoInstructions, /실제 Perfetto tab/u);
+});

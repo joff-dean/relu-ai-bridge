@@ -11,8 +11,6 @@ import {
   perfettoServerProofTranscript,
   validateLoopbackBridgeUrl,
   type BridgeAuthChallengeAck,
-  type AnalysisJob,
-  type AreaSelectionDto,
   type BridgeEvent,
   type BridgeRequest,
   type BridgeResponse,
@@ -68,7 +66,6 @@ export interface PerfettoBridgeClientOptions {
   readonly pluginVersion: string;
   readonly adapter: PerfettoV58Adapter;
   readonly onStatus?: (status: BridgeConnectionStatus) => void;
-  readonly onAnalysisJob?: (job: AnalysisJob) => void;
   readonly socketFactory?: (url: string) => BridgeSocket;
   /** Deterministic unit-test seam. Production plugin은 기본 Web Crypto만 사용한다. */
   readonly authCrypto?: PerfettoAuthCrypto;
@@ -104,7 +101,6 @@ export class PerfettoBridgeClient {
   private handshake: HandshakeState = {phase: 'idle'};
   private readonly authCrypto: PerfettoAuthCrypto;
   private attachment?: SessionAttachParams;
-  private analysisAvailable = false;
   private status: BridgeConnectionStatus = {
     state: 'disconnected',
     reconnectAttempt: 0,
@@ -120,10 +116,6 @@ export class PerfettoBridgeClient {
 
   getSessionAttachment(): SessionAttachParams | undefined {
     return this.attachment;
-  }
-
-  isAnalysisAvailable(): boolean {
-    return this.analysisAvailable;
   }
 
   connect(): void {
@@ -142,7 +134,6 @@ export class PerfettoBridgeClient {
     this.clearTimers();
     this.socket?.close(1000, 'user disconnect');
     this.socket = undefined;
-    this.analysisAvailable = false;
     this.updateStatus('disconnected');
   }
 
@@ -169,40 +160,6 @@ export class PerfettoBridgeClient {
       throw new Error('브리지 인증 연결 후 세션에 연결할 수 있습니다.');
     }
     this.sendEvent('session.attach_requested', params as unknown as JsonValue);
-  }
-
-  requestSelectionAnalysis(selection: AreaSelectionDto): string {
-    if (!this.authenticated) throw new Error('브리지 인증 연결 후 분석을 시작할 수 있습니다.');
-    const requestId = `analysis_request_${crypto.randomUUID().replaceAll('-', '_')}`;
-    this.sendEvent('analysis.start_requested', {
-      requestId,
-      selection: validateAreaSelection(selection),
-    } as unknown as JsonValue);
-    return requestId;
-  }
-
-  cancelAnalysis(jobId: string): void {
-    if (!this.authenticated) throw new Error('브리지 인증 연결 후 분석을 중지할 수 있습니다.');
-    this.sendEvent('analysis.cancel_requested', {jobId});
-  }
-
-  cancelAllAnalyses(): void {
-    if (!this.authenticated) throw new Error('브리지 인증 연결 후 분석을 중지할 수 있습니다.');
-    this.sendEvent('analysis.cancel_all_requested');
-  }
-
-  focusAnalysisEvidence(
-    jobId: string,
-    findingIndex: number,
-    evidenceIndex: number,
-  ): void {
-    if (!this.authenticated) throw new Error('브리지 인증 연결 후 근거 구간으로 이동할 수 있습니다.');
-    this.sendEvent('analysis.focus_requested', {
-      jobId,
-      findingIndex,
-      evidenceIndex,
-      operationId: `analysis_focus_${crypto.randomUUID().replaceAll('-', '_')}`,
-    });
   }
 
   private openSocket(isReconnect: boolean): void {
@@ -276,7 +233,6 @@ export class PerfettoBridgeClient {
       this.authenticated = false;
       this.handshake = {phase: 'idle'};
       this.attachment = undefined;
-      this.analysisAvailable = false;
       this.clearHandshakeTimer();
       if (wasAuthenticating && (event.code === 1008 || event.code === 4003)) {
         this.shouldReconnect = false;
@@ -309,10 +265,6 @@ export class PerfettoBridgeClient {
           throw new Error('인증 전에 ping을 받을 수 없습니다.');
         }
         this.sendEvent('bridge.pong', {nonce: message.nonce});
-        return;
-      case 'analysis_job':
-        if (!this.authenticated) throw new Error('인증 전에 분석 상태를 받을 수 없습니다.');
-        this.options.onAnalysisJob?.(message.job);
         return;
       case 'request':
         if (!this.authenticated) {
@@ -407,7 +359,6 @@ export class PerfettoBridgeClient {
     }
     this.clearHandshakeTimer();
     this.authenticated = true;
-    this.analysisAvailable = message.analysisAvailable === true;
     this.handshake = {phase: 'authenticated'};
     // Server-side durable assignment is authoritative. A reconnect receives a
     // fresh session.attach request only when the exact live trace is assigned.
@@ -597,14 +548,10 @@ function parseServerMessage(raw: unknown): ServerMessage {
     if (
       typeof parsed.protocolVersion !== 'string' ||
       typeof parsed.accepted !== 'boolean'
-      || (parsed.analysisAvailable !== undefined && typeof parsed.analysisAvailable !== 'boolean')
     ) {
       throw new Error('hello_ack 형식이 올바르지 않습니다.');
     }
     return parsed as unknown as ServerMessage;
-  }
-  if (parsed.type === 'analysis_job') {
-    return {type: 'analysis_job', job: parseAnalysisJob(parsed.job)};
   }
   if (parsed.type === 'ping') {
     if (typeof parsed.nonce !== 'string' || parsed.nonce.length > 256) {
@@ -624,52 +571,6 @@ function parseServerMessage(raw: unknown): ServerMessage {
     return parsed as unknown as ServerMessage;
   }
   throw new Error('지원하지 않는 브리지 메시지 type입니다.');
-}
-
-function validateAreaSelection(value: unknown): AreaSelectionDto {
-  if (!isRecord(value)
-    || !hasExactKeys(value, ['startNs', 'endNs', 'trackUris'])
-    || typeof value.startNs !== 'string'
-    || typeof value.endNs !== 'string'
-    || !Array.isArray(value.trackUris)
-    || value.trackUris.length > 1_000
-    || !value.trackUris.every((item) => typeof item === 'string')) {
-    throw new Error('분석 selection 형식이 올바르지 않습니다.');
-  }
-  return {
-    startNs: value.startNs,
-    endNs: value.endNs,
-    trackUris: [...value.trackUris],
-  };
-}
-
-function parseAnalysisJob(value: unknown): AnalysisJob {
-  if (!isRecord(value)
-    || !hasExactKeys(value, [
-      'id', 'requestId', 'status', 'createdAt', 'updatedAt', 'selection',
-      'progress', 'report', 'error',
-    ])
-    || typeof value.id !== 'string'
-    || typeof value.requestId !== 'string'
-    || !['queued', 'running', 'cancel_requested', 'cancelled', 'completed', 'failed'].includes(String(value.status))
-    || typeof value.createdAt !== 'string'
-    || typeof value.updatedAt !== 'string'
-    || typeof value.progress !== 'string'
-    || (value.error !== null && typeof value.error !== 'string')
-    || (value.report !== null && !isRecord(value.report))) {
-    throw new Error('분석 작업 상태 형식이 올바르지 않습니다.');
-  }
-  return {
-    id: value.id,
-    requestId: value.requestId,
-    status: value.status as AnalysisJob['status'],
-    createdAt: value.createdAt,
-    updatedAt: value.updatedAt,
-    selection: validateAreaSelection(value.selection),
-    progress: value.progress,
-    report: value.report as unknown as AnalysisJob['report'],
-    error: value.error,
-  };
 }
 
 function hasExactKeys(

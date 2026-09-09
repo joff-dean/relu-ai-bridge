@@ -92,6 +92,12 @@ POSIX 0700 directory/0600 file)에만 존재한다. Proxy는 live launcher PID�
 session을 종료 시 닫는다. 런처가 끝나면 자신이 소유한 descriptor만 제거한다. 최초
 등록 후 Codex를 한 번 재시작해야 하며, 이미 열린 task에는 도구가 hot-load되지 않는다.
 
+Perfetto에는 AI 패널을 열지 않는다. Codex/ChatGPT desktop의 새 task에서 분석과 후속 질문을
+계속하고, 작업을 멈추려면 AI 앱의 중지 기능을 사용한다. 결과의 `REF-1`, `DUT-2`는
+browser link가 아니라 근거 label이다. “DUT-2로 이동해줘”라고 명시하면 Codex가
+`perfetto_select_area`를 호출해 새 내장 browser가 아니라 현재 연결된 실제 Perfetto 탭을
+선택·확대한다. 보고서 생성만으로 화면을 자동 이동하지 않는다.
+
 아래 수동 HTTP 설정은 local stack이 아닌 장기 실행 중앙 Bridge를 별도로 연결할 때만
 사용한다.
 

@@ -197,6 +197,13 @@ Credential literal을 repository, project `.mcp.json`, shell script, ticket 또�
 4. 허용된 read/preview Capability의 `execute`
 5. Perfetto REF/DUT이면 전용 `perfetto_*` 도구
 
+Perfetto/WPF 내부에는 Claude 채팅 패널이나 CLI runner를 넣지 않는다. 분석 대화, 추가
+요구와 중지는 Claude client의 현재 session에서 처리한다. 보고서의 `REF-1`, `DUT-2`는
+URL이 아니며, 사용자가 특정 근거 이동을 명시한 경우에만 `perfetto_select_area` 같은 live
+mutation Capability로 현재 연결된 실제 화면을 이동한다. 새 browser를 여는 방식으로
+대체하지 않는다. Public embedded WPF 계약은 read-only이므로 focus Capability를 임의로
+가정하지 않는다.
+
 중앙 bridge의 새 설정은 `approvals.policy:"trusted_always"`를 사용한다. 이는 등록된
 Capability의 일반 보호 호출을 매번 묻지 않는 local 정책이며 URL, command 또는 schema를
 확장하지 않는다. Timeout 뒤 결과가 모호한 mutation 판정 같은 safety interlock은 자동

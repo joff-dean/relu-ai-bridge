@@ -171,17 +171,9 @@ node /absolute/path/to/relu-ai-bridge/bin/relu-ai-bridge.mjs archive-ledger
 Runtime bootstrap은 MCP 도구·권한을 추가하지 않고 server-owned 도구 계약도 바꾸지 않는다.
 공식 Codex가 발견되면 launcher는 user-scope `relu-perfetto` stdio MCP를 idempotent하게
 등록한다. 최초 한 번 Codex를 재시작한 뒤 새 task에서 “연결된 Perfetto 목록을 보여줘”,
-“REF와 DUT를 attach하고 차이를 분석해줘”처럼 요청하면 아래 도구가 호출된다. Perfetto
-우측의 `RELU 분석` side panel은 기본 닫힘이며 상단 toggle이나 command palette로만 연다.
-여러 UI는 각자의 `clientId`로 구분된다.
-
-패널의 `현재 선택 분석`은 선택을 다시 읽는 장기 request가 아니다. 클릭 시점의 exact
-`traceBinding`, `startNs`, `endNs`, `trackUris`를 job에 복사하고 이후 SQL은 이 범위를
-명시적으로 사용한다. 따라서 사용자가 분석 중 화면을 자유롭게 조작해도 job 범위는
-변하지 않는다. Panel hide는 작업을 계속하고 `분석 중지`/`모두 중지`만 runner를 취소한다.
-v58.2에는 실행 중 query 취소 API가 없으므로 이미 시작된 SQL은 반환 뒤 결과를 폐기하며
-후속 SQL은 실행하지 않는다. 같은 Perfetto client의 query는 직렬화하고 서로 다른 REF/DUT
-client는 병렬 조회할 수 있다.
+“REF와 DUT를 attach하고 차이를 분석해줘”처럼 요청하면 아래 도구가 호출된다. Perfetto에는
+AI prompt, 분석 side panel 또는 CLI child runner가 없다. 여러 UI는 각자의 `clientId`로
+구분되고 분석 대화·후속 요청·취소는 데스크톱 AI 앱의 task가 소유한다.
 
 | Tool | 용도 | 변경 | 승인 |
 | --- | --- | --- | --- |
@@ -206,10 +198,12 @@ client는 병렬 조회할 수 있다.
 
 `perfetto_select_area`와 generic `execute(select_range)`는 같은 Perfetto trace resource와 `operationId` 원장을 공유한다. 같은 ID의 중복 dispatch, reconnect·process restart 우회가 차단되며 timeout은 `/admin/`에서 실제 선택 상태를 확인하고 판정할 때까지 ambiguous로 남는다.
 
-분석 결과의 evidence button도 새 `operationId`를 만든 뒤 이 동일한 mutation 경로를
-사용한다. Model이 반환한 timestamp는 server가 해당 current/REF/DUT trace 범위 안인지
-검사하고, panel text는 실행 가능한 URL·script가 아니라 Mithril text와 고정 callback으로만
-렌더링한다.
+분석 보고서는 근거를 `REF-1`, `DUT-2` 같은 label과 exact integer-string 범위로 식별한다.
+이 label을 Markdown URL이나 새 browser tab으로 만들지 않는다. 사용자가 AI 앱에서 특정
+근거로 이동해 달라고 명시하면 client가 해당 label의 보존된 selector·범위를 새
+`operationId`와 함께 `perfetto_select_area`에 전달한다. 그러면 새 browser를 여는 대신
+이미 Bridge에 연결된 실제 Perfetto UI가 선택·zoom된다. 보고서 출력만으로 UI를 자동
+변경하지 않으며, stale trace/session binding은 기존 도구 경계에서 거부된다.
 
 `perfetto_align`은 `applySelection:false` preview에는 `operationId`가 필요 없다. 기본값을 포함해 DUT 선택을 반영할 때는 필수이며, operation을 SQL/DTW 전에 원장에 선점한다. 따라서 동일 ID의 concurrent/completed 호출은 expensive REF/DUT query를 다시 실행하지 않고, 재시작 뒤 raw 결과가 없는 completed ID도 재실행하지 않는다.
 

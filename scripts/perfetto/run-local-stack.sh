@@ -16,16 +16,14 @@ shift
 "$SCRIPT_DIR/verify-integration.sh" "$perfetto_dir"
 assert_perfetto_node "$perfetto_dir"
 official_codex='/Applications/ChatGPT.app/Contents/Resources/codex'
-codex_args=()
 if [ "$(uname -s)" = 'Darwin' ] && [ -f "$official_codex" ] && [ ! -L "$official_codex" ] \
   && /usr/bin/codesign --verify --strict "$official_codex" >/dev/null 2>&1; then
   codex_identity=$(/usr/bin/codesign -dv --verbose=4 "$official_codex" 2>&1 || true)
   case "$codex_identity" in
     *'Identifier=codex'*'TeamIdentifier=2DC432GLL2'*)
       "$perfetto_dir/ui/node" "$SCRIPT_DIR/register-codex.mjs" "$official_codex" "$perfetto_dir/ui/node"
-      codex_args=(--codex-cli "$official_codex")
       ;;
   esac
 fi
 
-exec "$perfetto_dir/ui/node" "$SCRIPT_DIR/run-local-stack.mjs" "$perfetto_dir" "$@" "${codex_args[@]}"
+exec "$perfetto_dir/ui/node" "$SCRIPT_DIR/run-local-stack.mjs" "$perfetto_dir" "$@"

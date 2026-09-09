@@ -8,6 +8,7 @@
 - timestamp는 나노초 integer string일 수 있다. JavaScript number나 반올림된 표시 시간으로 바꾸어 경계를 손상하지 않는다.
 - 빈 selection, trace 경계 밖 범위, 잘린 trace, clock domain 차이, 수집 중단 여부를 먼저 확인한다.
 - 직접 Perfetto 도구의 selector는 `clientId` 또는 `sessionId + role` 중 현재 계약이 허용한 한 방식만 쓴다.
+- 분석 시작 시 선택의 `startNs`, `endNs`, `trackUris`와 selector를 복사해 고정한다. 이후 사용자가 실제 Perfetto 화면을 pan/zoom하거나 다른 구간을 선택해도 진행 중 분석의 범위를 바꾸지 않는다. trace가 닫히거나 session role의 client binding이 바뀐 경우에는 stale 분석을 중단한다.
 
 ## 조사 순서
 
@@ -31,3 +32,10 @@
 5. DUT 선택 반영은 사용자가 요청한 경우에만 새 `operationId`로 수행한다. preview와 적용 결과를 구분한다.
 
 정렬된 시각은 계산된 대응 관계이지 동일 사건의 증명은 아니다. feature 선택, sampling, clock과 trace 누락이 만든 대안 설명을 보고한다.
+
+## 실제 Perfetto 화면으로 이동
+
+- 각 이동 가능한 근거에는 `REF-1`, `DUT-1`처럼 task 안에서 유일한 label, target selector, exact `startNs`/`endNs`와 필요한 `trackUris`를 함께 보존한다.
+- label을 클릭 가능한 URL이나 Perfetto viewer URL로 출력하지 않는다. 분석 완료만으로 현재 UI를 이동하지 않는다.
+- 사용자가 “DUT-1로 이동”, “REF-2를 확대”처럼 특정 근거 이동을 명시한 경우에만 새 stable `operationId`를 만들고 `perfetto_select_area`를 호출한다.
+- `perfetto_select_area` 결과는 새 browser를 여는 것이 아니라 Bridge에 연결된 실제 Perfetto tab의 `trace.selection.selectArea`를 실행한다. 도구가 unavailable/stale/ambiguous를 반환하면 URL navigation으로 우회하지 않는다.

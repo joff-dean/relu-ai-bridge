@@ -482,17 +482,15 @@ bundled Perfetto Node + RELU stdio proxy의 exact 절대 경로로 등록되며,
 Codex를 한 번 재시작한다. Control credential은 user-private runtime descriptor에만
 있고 launcher 종료 시 instance ID가 맞는 파일만 제거된다.
 
-`--codex-cli`가 활성화된 배포본은 v58.2 native SidePanel에 `RELU 분석` tab을 등록하되
-trace load에서 `showTab`을 호출하지 않는다. 상단 toggle 또는 command로만 열고, 분석
-trigger 시 현재 selection을 immutable job으로 복사한다. Panel hide와 이후 timeline 조작은
-분석을 계속하며 작업별/전체 cancel은 Codex child, queued step과 late result를 중단한다.
-실행 중 PerfettoSQL 자체는 v58.2에서 취소할 수 없으므로 반환을 기다린 뒤 폐기한다.
+반입본의 Perfetto/WPF UI에는 AI side panel, prompt box 또는 Codex/Claude child runner를
+추가하지 않는다. 데스크톱 AI 앱이 대화·후속 요구·취소를 소유하고 viewer는 MCP Context,
+bounded query와 검토된 UI Capability만 제공한다. Overlay 검사에서 `analysis_panel`,
+`analysis.start_requested`와 viewer-side `codex exec` 경로가 없음을 확인한다.
 
-Runner 반입 시 공식 Codex executable 검증, argument-array/`shell:false`, read-only sandbox,
-`--ignore-user-config`, ephemeral session, fixed output schema와 bundled Node/proxy exact path를
-확인한다. Bounded report temp file이 parse 직후 삭제되고 trace/session 교체 뒤 evidence focus가
-거부되는지 검증한다. REF/DUT focus button은 기존 selection approval/operation ledger를
-우회하면 안 된다.
+AI 보고서의 REF/DUT 근거는 URL/button이 아니라 stable label과 exact timestamp 범위다.
+사용자가 AI 앱에서 특정 label로 이동을 명시한 경우에만 새 `operationId`로
+`perfetto_select_area`를 호출해 실제 연결 탭을 focus한다. 새 browser를 열거나 viewer URL을
+생성하지 않고, trace/session 교체 뒤 stale selector는 기존 binding 검사로 거부한다.
 
 Windows 반입본은 WSL/Linux CI에서 copy overlay와 build를 완료한 뒤 native PowerShell의
 `scripts\perfetto\run-local-stack.ps1 C:\work\perfetto-v58.2 -Instances 2`로
