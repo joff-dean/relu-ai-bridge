@@ -512,6 +512,20 @@ Perfetto URL로 검증한다. Host는
 등록은 SID-bound `Global\` mutex 안에서 공식 CLI의 get/add/get을 수행하며 같은 MCP 이름의
 다른 등록이나 managed policy 충돌을 덮어쓰거나 우회하지 않는다.
 
+회사 Authenticode signing service를 사용할 수 없는 pilot은 최종 Installer SHA-256을
+release worker에서 계산하고 EXE와 digest를 서로 다른 인증된 내부 채널로 반입한다. 대상자는
+일반 권한 PowerShell의 `Get-FileHash -Algorithm SHA256` 결과를 승인 레코드와 대조한 후,
+Windows가 실행 승인 UI를 제공하는 검토된 pilot PC에서만 한 번 실행한다. 관리형 PC가
+unsigned 실행을 차단하면 IT가 그 release의 exact hash만 App Control allow rule로 배포하거나
+정식 서명 경로를 복구한다. 새 release는 새 hash/review/rule을 요구한다.
+
+SmartScreen/Smart App Control 비활성화, `Unblock-File`, registry 우회, wildcard path 허용,
+관리자 실행이나 Chrome developer mode는 대안이 아니다. 이 절차는 Installer Authenticode
+부재만 다루며, stable Extension ID를 만드는 CRX private key와 exact HTTPS update manifest,
+managed Chrome policy는 계속 필요하다. 어느 것도 준비할 수 없으면 자동 연결 배포를
+중단한다. 세부 명령과 중단 조건은 `docs/DEPLOYMENT.md`의
+“Authenticode 서명이 불가능한 경우”를 따른다.
+
 최소 명령:
 
 ```bash

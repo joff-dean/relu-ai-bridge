@@ -314,6 +314,56 @@ checksum을 다시 검증해 `%LOCALAPPDATA%\RELU\PerfettoConnector`의 versione
 RELU tag, connector manifest와 company Perfetto full SHA를 함께 기록한다. 이 공개 저장소에는
 회사 서명 CRX, 고정 Node runtime, signing material이나 빌드·서명 완료된 installer가 없다.
 
+### Authenticode 서명이 불가능한 경우
+
+Windows Authenticode 서명이 없어도 Installer의 payload/file checksum, canonical containment,
+충돌 보존과 user-scope 설치 계약은 그대로 동작한다. 그러나 unsigned EXE는 publisher 신원을
+증명하지 못하며 Windows Defender SmartScreen 또는 Smart App Control/회사 App Control
+정책이 경고하거나 차단할 수 있다. Installer가 이 OS 결정을 우회하지 않는다. Microsoft의
+[SmartScreen reputation 안내](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation)도
+unsigned 파일은 매 버전마다 reputation이 새로 필요하고 enterprise policy가 실행을 완전히
+막을 수 있다고 설명한다.
+
+서명 불가 배포는 다음 두 경로만 지원한다.
+
+1. **제한된 pilot PC**: release worker가 최종 EXE의 SHA-256을 계산하고, EXE와 digest를
+   서로 다른 인증된 사내 채널로 전달한다. 사용자는 일반 권한으로 digest를 대조한 뒤
+   Windows가 제공하는 실행 승인 UI가 있을 때만 한 번 승인하고 실행한다.
+2. **관리형 사내 PC**: IT가 검토한 정확한 EXE SHA-256을 App Control for Business/동등한
+   조직 정책에 allow rule로 배포한다. 새 빌드는 hash가 달라지므로 매 release마다 새 review와
+   rule이 필요하다. wildcard path, publisher 미검증 허용 또는 전체 보안 기능 비활성화는
+   지원하지 않는다.
+
+```powershell
+$installer = 'C:\release\RELU-Perfetto-Setup.exe'
+Get-FileHash -Algorithm SHA256 $installer
+Get-AuthenticodeSignature $installer |
+  Select-Object Status, StatusMessage, SignerCertificate
+```
+
+별도 승인 레코드에는 installer SHA-256, RELU commit/tag, exact Perfetto SHA, Extension ID,
+origin, update URL, Node SHA-256, 검토자와 대상 PC group을 기록한다. 사용자는 게시된 digest와
+`Get-FileHash` 결과가 정확히 일치하지 않으면 실행하지 않는다. 실행 승인 UI가 없거나 조직
+정책이 차단하면 배포를 중단하고 IT allow rule 또는 정식 Authenticode 서명을 사용한다.
+`Unblock-File`, SmartScreen/Smart App Control 비활성화, registry 우회, 관리자 실행이나
+developer-mode Extension 설치를 대체 경로로 사용하지 않는다. ZIP으로 감싸거나 파일 이름을
+바꾸는 것도 신뢰를 만들지 않는다.
+
+이 예외는 **Windows Installer Authenticode**에만 적용된다. Chrome 자동 설치에는 여전히
+한 번 생성해 보관한 Extension private key로 서명한 CRX, 그 key에서 파생된 stable Extension
+ID, exact HTTPS update manifest와 managed Chrome policy가 필요하다. 이것을 준비할 수 없으면
+현재 one-click 자동 연결 계약으로 배포할 수 없다.
+
+서명이 없는 pilot에서도 최종 사용자 동작은 OS 경고 승인 후 EXE 한 번 실행, Chrome과 AI 앱
+한 번 재시작이다. 경고 없는 전사 one-click 경험은 조직 allow policy 또는 신뢰된
+Authenticode signing identity 없이는 보장하지 않는다.
+
+EndViewer/WPF의 최종 single executable도 동일하다. Product owner가 proprietary application을
+완전히 publish한 **최종 파일**의 SHA-256을 승인하고 pilot 또는 exact-hash App Control rule로
+배포한다. SDK DLL이나 중간 publish output의 hash를 최종 application 승인에 대신 사용하지
+않는다. 이 공개 저장소에는 완성된 EndViewer가 없으므로 그 unsigned binary의 실행·등록을
+여기서 검증했다고 주장하지 않는다.
+
 ## Upgrade checklist
 
 1. RELU `relu-ai-bridge-v0.7.0` tag/commit과 release manifest/hash 검증

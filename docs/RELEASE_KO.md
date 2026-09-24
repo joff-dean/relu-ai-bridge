@@ -40,6 +40,11 @@ Perfetto artifact는 Extension/Native Host와 one-click Installer source,
 `build-windows-installer.mjs`까지 제공한다. signed CRX, 고정 Node runtime, 회사
 Origin/Extension/update URL이 컴파일된 빌드·서명 완료 EXE는 내부 Windows/Chrome release
 pipeline에서 별도로 생성·서명·검증한다.
+Authenticode signing service가 일시적으로 없으면 제한된 pilot용 unsigned Installer를 만들 수
+있지만, final EXE SHA-256을 별도 인증 채널에서 승인하고 대상 PC를 고정한다. 관리형 PC에는
+release별 exact-hash App Control allow rule만 허용하며 전역 unsigned/path wildcard 허용은
+금지한다. CRX private key, stable Extension ID와 managed Chrome policy는 생략할 수 없다.
+Windows가 실행을 차단하고 IT allow rule도 없으면 해당 release는 배포하지 않는다.
 새 connector를 추가할 때는 core manifest의 connector 목록과 해당 connector의
 별도 manifest/schema를 추가한다.
 

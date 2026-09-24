@@ -69,6 +69,16 @@ network request를 보내지 않는다. Installer는 HKCU Native Messaging Host�
 Codex/Claude MCP 또는 수정된 Skill과 충돌하면 보존하고 실패한다. 외부 CRX 무인 설치는
 회사 관리 Windows/Chrome만 지원하며 비관리 Chrome 보호 우회 경로는 없다.
 
+Authenticode가 없는 pilot Installer는 내부 payload checksum은 검증하지만 publisher identity를
+증명하지 못한다. 따라서 별도 인증된 채널의 최종 EXE SHA-256 대조와 대상 PC 제한을 필수로
+하고, 관리형 PC는 IT가 승인한 exact-hash App Control rule만 사용한다. hash allow rule은
+release별로 교체하며 wildcard path/전체 publisher/unsigned 전역 허용으로 넓히지 않는다.
+Windows가 unsigned 실행을 차단하면 Installer가 우회하지 않고 배포를 중단한다. 사용자가
+SmartScreen/Smart App Control을 끄거나 `Unblock-File`, registry 수정, 관리자 실행으로
+우회하도록 안내하지 않는다. CRX signing key와 stable Extension ID는 이 예외 대상이 아니다.
+동일한 제한을 proprietary EndViewer/WPF의 최종 unsigned executable에도 적용하며 SDK 또는
+중간 build artifact hash를 최종 application의 신뢰 근거로 사용하지 않는다.
+
 `mcpAuth:path`는 제한된 client 호환용이다. Token이 URL path·proxy log·history에 남을 위험이 있으므로 Bearer를 기본으로 사용한다.
 
 표준 Streamable HTTP MCP와 browser Admin UI의 Bearer 방식은 plain loopback 위에서

@@ -390,6 +390,17 @@ node .\scripts\perfetto\build-windows-installer.mjs `
 이 공개 저장소에는 installer source와 재현 가능한 패키징 도구만 있다. 회사 서명 CRX,
 고정 Node runtime, code-signing material과 빌드·서명 완료된 EXE를 제공했다고 주장하지 않는다.
 
+Authenticode 인증서를 당장 사용할 수 없는 제한된 pilot에서는 같은 최종 EXE의 SHA-256을
+별도 인증된 사내 채널로 배포하고, 사용자가 hash를 대조한 뒤 Windows가 허용하는 실행 승인
+UI에서 한 번 승인할 수 있다. 관리형 PC에서 unsigned 실행이 차단되면 IT가 검토한 **정확한
+파일 hash**를 조직 App Control 정책에 release별로 허용하거나 정식 서명을 준비해야 한다.
+SmartScreen/Smart App Control 비활성화, `Unblock-File`, wildcard path 허용과 관리자 실행은
+지원하지 않는다. 이 예외는 Installer Authenticode에만 해당하며, 자동 설치용 CRX의 고정
+private key/Extension ID와 managed Chrome policy는 여전히 필수다. 명령과 중단 조건은
+[배포 가이드의 unsigned 절차](docs/DEPLOYMENT.md#authenticode-서명이-불가능한-경우)를 따른다.
+WPF/EndViewer도 product owner가 완전히 publish한 최종 EXE에 같은 pilot/exact-hash 정책을
+적용하며, 이 저장소의 SDK나 중간 산출물 hash로 최종 application을 대신 승인하지 않는다.
+
 Perfetto와 WPF 안에는 별도 AI 채팅 패널이나 CLI runner를 넣지 않는다. 분석 대화, 후속
 질문과 작업 중지는 Codex/Claude 같은 데스크톱 AI 앱에서 수행한다. 사용자가 AI 앱에서
 “현재 선택 구간을 분석해줘”라고 요청하면 MCP가 현재 Context와 필요한 bounded 데이터를
