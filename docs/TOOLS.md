@@ -11,6 +11,12 @@
 두 표면은 핵심 generic 도구 이름을 공유할 수 있지만 서로의 session을 fallback/proxy하지
 않는다. Desktop 앱을 중앙 `/relu/desktop/ws`에 등록하는 경로는 지원하지 않는다.
 
+Perfetto 설치 파일은 MCP 도구나 Capability가 아니다. 서명된 `RELU-Perfetto-Setup.exe`를
+사용자가 한 번 실행하면 exact 회사 Origin/Extension ID/update URL, Native Host,
+`relu-perfetto` user-scope MCP와 분석 Skill을 구성한다. Installer는 임의 URL·command·tool을
+받지 않으며 설치 계약에 컴파일된 값만 사용한다. 설치 뒤 AI 앱이 제공받는 도구 집합은
+아래 server-owned 계약과 동일하고 Installer나 Extension이 이를 확장하지 않는다.
+
 ## 범용 도구
 
 Claude/Codex는 서비스 종류를 가정하기 전에 이 네 도구로 discovery한다.

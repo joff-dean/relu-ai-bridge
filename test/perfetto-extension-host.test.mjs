@@ -4,6 +4,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import {brotliDecompressSync} from 'node:zlib';
 import {
   perfettoRuntimeFile,
   publishPerfettoRuntime,
@@ -12,6 +13,11 @@ import {
 } from '../src/perfetto-runtime.mjs';
 import {createDesktopMcpRelay} from '../scripts/perfetto/desktop-mcp-proxy.mjs';
 import {buildPerfettoExtension, parseBuildExtensionArgs} from '../scripts/perfetto/build-extension.mjs';
+import {
+  appendInstallerBundle,
+  parseWindowsInstallerArgs,
+  verifyWindowsPe,
+} from '../scripts/perfetto/build-windows-installer.mjs';
 import {parseExtensionBridgeArgs} from '../scripts/perfetto/run-extension-bridge.mjs';
 
 async function listen(server) {
@@ -126,9 +132,107 @@ test('desktop AI stdio relay uses the private Native Host descriptor and preserv
   assert.equal(closedSession, 'mcp_test_session');
 });
 
-test('Windows installer registers only the fixed user-scope Native Host and same executable MCP mode', async () => {
-  const source = await fs.readFile(new URL('../scripts/perfetto/install-native-host.ps1', import.meta.url), 'utf8');
-  assert.match(source, /HKCU:\\Software\\Google\\Chrome\\NativeMessagingHosts\\com\.relu_ai_bridge\.perfetto/u);
+test('Windows one-click installer build contract pins exact managed Chrome and runtime inputs', () => {
+  const options = parseWindowsInstallerArgs([
+    '--origin', 'https://perfetto.company.example',
+    '--extension-id', 'a'.repeat(32),
+    '--extension-update-url', 'https://perfetto.company.example/relu-extension/updates.xml',
+    '--node-exe', '/approved/node.exe',
+    '--node-sha256', 'b'.repeat(64),
+    '--output', '/tmp/RELU-Perfetto-Setup.exe',
+  ]);
+  assert.equal(options.bridgePort, 5746);
+  assert.equal(options.runtimeId, 'win-x64');
+  assert.throws(() => parseWindowsInstallerArgs([
+    '--origin', 'https://perfetto.company.example',
+    '--extension-id', 'a'.repeat(32),
+    '--extension-update-url', 'http://perfetto.company.example/update.xml',
+    '--node-exe', '/approved/node.exe',
+    '--node-sha256', 'b'.repeat(64),
+    '--output', '/tmp/RELU-Perfetto-Setup.exe',
+  ]), /HTTPS URL/u);
+  assert.throws(() => parseWindowsInstallerArgs([
+    '--origin', 'https://perfetto.company.example',
+    '--extension-id', 'a'.repeat(32),
+    '--extension-update-url', 'https://perfetto.company.example/update.xml',
+    '--node-exe', '/approved/node.exe',
+    '--node-sha256', 'b'.repeat(64),
+    '--output', path.join(process.cwd(), 'setup.exe'),
+  ]), /outside the source repository/u);
+});
+
+test('Windows one-click installer appends a checksummed bounded payload to one executable', async (t) => {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'relu-installer-archive-test-'));
+  t.after(() => fs.rm(temporary, {recursive: true, force: true}));
+  const stub = path.join(temporary, 'stub.exe');
+  const output = path.join(temporary, 'setup.exe');
+  await fs.writeFile(stub, Buffer.from('MZ-test-stub'));
+  const paths = [
+    'Relu.AI.Bridge.PerfettoNativeHost.exe',
+    'runtime/node.exe',
+    'app/scripts/perfetto/run-extension-bridge.mjs',
+    'app/scripts/perfetto/desktop-mcp-proxy.mjs',
+    'app/scripts/skills/manage-skills.mjs',
+    'app/skills/manifest.json',
+  ];
+  const files = [];
+  for (const [index, relative] of paths.entries()) {
+    const source = path.join(temporary, `source-${index}`);
+    const content = Buffer.from(`payload-${relative}`);
+    await fs.writeFile(source, content);
+    files.push({source, path: relative, content});
+  }
+  const contract = await appendInstallerBundle({
+    stub,
+    files,
+    output,
+    contract: {
+      product: 'relu-perfetto-connector',
+      productVersion: '0.7.0',
+      runtimeIdentifier: 'win-x64',
+      extensionId: 'a'.repeat(32),
+      perfettoOrigin: 'https://perfetto.company.example',
+      extensionUpdateUrl: 'https://perfetto.company.example/relu-extension/updates.xml',
+      bridgePort: 5746,
+    },
+  });
+  const artifact = await fs.readFile(output);
+  assert.equal(artifact.subarray(-16).toString('ascii'), 'RELU-PERFETTO-V1');
+  const contractLength = artifact.readInt32LE(artifact.length - 20);
+  const payloadLength = Number(artifact.readBigInt64LE(artifact.length - 28));
+  assert.equal(payloadLength, contract.payloadBytes);
+  const contractStart = artifact.length - 28 - contractLength;
+  const parsed = JSON.parse(artifact.subarray(contractStart, artifact.length - 28));
+  assert.equal(parsed.payloadSha256, contract.payloadSha256);
+  const payloadStart = Buffer.byteLength('MZ-test-stub');
+  const first = parsed.files[0];
+  const expanded = brotliDecompressSync(artifact.subarray(
+    payloadStart + first.offset,
+    payloadStart + first.offset + first.compressedBytes,
+  ));
+  assert.deepEqual(expanded, files[0].content);
+});
+
+test('Windows installer builder rejects a Node runtime for the wrong PE architecture', async (t) => {
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'relu-installer-pe-test-'));
+  t.after(() => fs.rm(temporary, {recursive: true, force: true}));
+  const executable = path.join(temporary, 'node.exe');
+  const pe = Buffer.alloc(512);
+  pe.write('MZ', 0, 'ascii');
+  pe.writeUInt32LE(128, 0x3c);
+  pe.writeUInt32LE(0x00004550, 128);
+  pe.writeUInt16LE(0x8664, 132);
+  await fs.writeFile(executable, pe);
+  await verifyWindowsPe(executable, 'win-x64');
+  await assert.rejects(verifyWindowsPe(executable, 'win-arm64'), /architecture does not match/u);
+});
+
+test('Windows installer source uses only fixed user-scope registration and preserves conflicts', async () => {
+  const source = await fs.readFile(new URL(
+    '../sdk-dotnet/src/Relu.AI.Bridge.PerfettoInstaller/Program.cs', import.meta.url), 'utf8');
+  assert.match(source, /Registry\.CurrentUser/u);
+  assert.match(source, /ExtensionInstallForcelist/u);
   assert.match(source, /--relu-register-ai-clients/u);
-  assert.doesNotMatch(source, /Invoke-Expression|Start-Process|HKLM:/u);
+  assert.match(source, /IsOwnedRegistration/u);
+  assert.doesNotMatch(source, /Registry\.LocalMachine\.CreateSubKey|Invoke-Expression|Start-Process/u);
 });

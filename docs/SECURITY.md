@@ -53,6 +53,22 @@ capability 또는 permission을 선택할 수 없다. 첫 application message의
 검증된 page origin과 plugin ID에 다시 묶인다. Trace/browser 입력은 이 계약을 변경하거나
 Extension 권한을 승인할 수 없다.
 
+Windows 사용자는 회사 release pipeline이 만든 `RELU-Perfetto-Setup.exe` 하나만 실행한다.
+Installer는 관리자 권한 실행을 거부하고 `%LOCALAPPDATA%\RELU\PerfettoConnector` 아래의
+versioned user-scope directory만 쓴다. EXE footer의 bounded 계약, 전체 compressed payload
+SHA-256과 각 파일의 압축 해제 크기/SHA-256을 검증하고, canonical containment와
+reparse-point 거부 뒤 원자적으로 승격한다. Node executable도 build 시 전달한 SHA-256과
+일치해야 payload에 들어간다. 기존 version directory의 파일 집합이나 checksum이 다르면
+repair라는 이름으로 덮어쓰지 않는다.
+
+Installer가 Chrome policy에 기록하는 network destination은 Extension 계약의 exact HTTPS
+update URL 하나다. 실제 다운로드는 Chrome managed policy가 수행하며 Installer 자체는
+network request를 보내지 않는다. Installer는 HKCU Native Messaging Host와
+해당 Extension ID의 `ExtensionInstallForcelist` 항목만 추가하며 HKLM을 쓰지 않는다.
+기존 `ExtensionSettings`, 같은 ID의 다른 update URL, 소유권을 증명할 수 없는 Native Host,
+Codex/Claude MCP 또는 수정된 Skill과 충돌하면 보존하고 실패한다. 외부 CRX 무인 설치는
+회사 관리 Windows/Chrome만 지원하며 비관리 Chrome 보호 우회 경로는 없다.
+
 `mcpAuth:path`는 제한된 client 호환용이다. Token이 URL path·proxy log·history에 남을 위험이 있으므로 Bearer를 기본으로 사용한다.
 
 표준 Streamable HTTP MCP와 browser Admin UI의 Bearer 방식은 plain loopback 위에서

@@ -177,17 +177,21 @@ internal static partial class Program
             ServerName = "relu-perfetto",
             RegisterClaude = true,
             RegisterCodex = true,
+            RequireHealthyConnection = false,
         }).ConfigureAwait(false);
         foreach (var client in result.Clients)
         {
             await Console.Error.WriteLineAsync($"{client.Client}: {client.State} - {client.Message}")
                 .ConfigureAwait(false);
         }
-        if (!result.Clients.All(item => item.State is ReluAgentRegistrationState.Registered
-            or ReluAgentRegistrationState.AlreadyRegistered)) return 2;
-        return await RunNodeUtilityAsync(
+        var skillsExitCode = await RunNodeUtilityAsync(
             SkillsScriptPath(), ["install", "--scope", "user", "--target", "both"])
             .ConfigureAwait(false);
+        if (skillsExitCode != 0) return skillsExitCode;
+        if (result.Clients.Any(item => item.State is ReluAgentRegistrationState.Conflict
+            or ReluAgentRegistrationState.Failed)) return 2;
+        return result.Clients.Any(item => item.State is ReluAgentRegistrationState.Registered
+            or ReluAgentRegistrationState.AlreadyRegistered) ? 0 : 3;
     }
 
     private static async Task<int> RunNodeUtilityAsync(string script, IReadOnlyList<string> arguments)

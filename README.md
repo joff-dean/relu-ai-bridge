@@ -351,22 +351,44 @@ Extension을 Chrome 관리 정책으로 설치하고, Windows 사용자 범위�
 content script가 자동 주입되고 Chrome이 Native Host를 자동 시작한다. Native Host는 하나의
 loopback Bridge를 시작해 모든 Perfetto 탭이 공유하게 하고, ephemeral control/connector
 credential은 Native Messaging과 사용자 전용 runtime descriptor로만 전달한다. 사용자에게
-토큰 입력, Bridge 실행, 브라우저 재실행 절차가 없다.
+토큰 입력이나 Bridge 실행 절차가 없다. 최초 설치 직후에만 Chrome과 AI 앱을 한 번
+재시작하고 이후 일상 사용에서는 추가 실행 절차가 없다.
 
-Windows 배포 패키지는 `Relu.AI.Bridge.PerfettoNativeHost.exe`, 고정 Node runtime과 이
-저장소의 `app` tree를 포함한다. 패키지를 검증된 위치에 설치한 뒤 다음 명령으로 exact
-Extension ID/origin과 Chrome user-scope manifest, Codex/Claude user-scope
-`relu-perfetto` MCP, manifest-verified user-scope 분석 Skills를 한 번에 구성한다.
+Windows 사용자의 설치 경로는 서명된 `RELU-Perfetto-Setup.exe` 하나뿐이다. 사용자는
+관리자 권한이 아닌 평소 계정으로 이 파일을 한 번 실행한다. 설치 파일은 checksum이 고정된
+`Relu.AI.Bridge.PerfettoNativeHost.exe`, Node runtime과 검토된 `app` tree를
+`%LOCALAPPDATA%\RELU\PerfettoConnector` 아래에 원자적으로 풀고 다음 항목을 구성한다.
+
+- exact Extension ID와 사내 HTTPS update URL의 Chrome user policy
+- exact Extension ID만 허용하는 user-scope Native Messaging manifest
+- Codex/Claude user-scope `relu-perfetto` MCP
+- manifest-verified user-scope 분석 Skills
+
+설치 뒤 Chrome과 Codex/Claude를 한 번 재시작하면 된다. 이후에는 회사 Perfetto URL을 열고
+AI 앱에 분석을 요청하며, token·port·Bridge launcher·PowerShell 명령은 없다. 기존 Chrome
+`ExtensionSettings`, 같은 Extension ID의 다른 update URL, 다른 Native Host/MCP 등록 또는
+수정된 Skill은 덮어쓰지 않고 설치를 중단한다.
+
+외부 CRX의 무인 설치는 회사 관리 Windows/Chrome에서만 지원된다. 회사 key로 서명한 CRX와
+update manifest를 설치 계약에 고정된 HTTPS URL에 먼저 게시해야 한다. 개인·비관리 Chrome의
+보호를 우회하는 sideload 또는 developer-mode 경로는 제공하지 않는다.
+
+내부 release pipeline은 검증한 Windows `node.exe`의 SHA-256을 지정해 단일 파일을 만든 뒤
+생성된 최종 EXE 자체를 회사 code-signing key로 서명한다.
 
 ```powershell
-.\scripts\perfetto\install-native-host.ps1 `
-  -InstallDirectory 'C:\Program Files\RELU Perfetto Connector' `
-  -ExtensionId 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' `
-  -PerfettoOrigin 'https://perfetto.company.example'
+node .\scripts\perfetto\build-windows-installer.mjs `
+  --origin https://perfetto.company.example `
+  --extension-id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa `
+  --extension-update-url https://perfetto.company.example/relu-extension/updates.xml `
+  --node-exe C:\release-inputs\node.exe `
+  --node-sha256 <검증된-64자리-sha256> `
+  --output C:\release\RELU-Perfetto-Setup.exe `
+  --runtime-id win-x64
 ```
 
-이 공개 저장소는 Native Host source와 설치 계약을 제공하며 회사 서명 바이너리나 완성된
-Windows 설치 파일을 제공했다고 주장하지 않는다.
+이 공개 저장소에는 installer source와 재현 가능한 패키징 도구만 있다. 회사 서명 CRX,
+고정 Node runtime, code-signing material과 빌드·서명 완료된 EXE를 제공했다고 주장하지 않는다.
 
 Perfetto와 WPF 안에는 별도 AI 채팅 패널이나 CLI runner를 넣지 않는다. 분석 대화, 후속
 질문과 작업 중지는 Codex/Claude 같은 데스크톱 AI 앱에서 수행한다. 사용자가 AI 앱에서

@@ -32,6 +32,7 @@ public sealed class ReluAgentRegistrationOptions
     public string ServerName { get; init; } = "relu-endviewer";
     public bool RegisterCodex { get; init; } = true;
     public bool RegisterClaude { get; init; } = true;
+    public bool RequireHealthyConnection { get; init; } = true;
     public string CodexCommand { get; init; } = "codex";
     public string ClaudeCommand { get; init; } = "claude";
     public TimeSpan CommandTimeout { get; init; } = TimeSpan.FromSeconds(15);
@@ -277,6 +278,7 @@ public sealed class ReluAiClientRegistrar
                 return ExistingRegistrationResult(
                     client,
                     InspectRegistration(client, current.StandardOutput, options.ServerName, executablePath),
+                    options.RequireHealthyConnection,
                     "The existing user-scope registration already matches EndViewer.",
                     "The server name is already registered to a different command; it was preserved.");
             }
@@ -306,6 +308,7 @@ public sealed class ReluAiClientRegistrar
                 return ExistingRegistrationResult(
                     client,
                     InspectRegistration(client, preAdd.Result.StandardOutput, options.ServerName, executablePath),
+                    options.RequireHealthyConnection,
                     "Another EndViewer process registered the exact command first.",
                     "The server name changed before registration; the other registration was preserved.");
             }
@@ -340,6 +343,7 @@ public sealed class ReluAiClientRegistrar
                     return ExistingRegistrationResult(
                         client,
                         InspectRegistration(client, afterRejectedAdd.Result.StandardOutput, options.ServerName, executablePath),
+                        options.RequireHealthyConnection,
                         "The exact registration appeared while the client rejected a competing add.",
                         "A different registration won the concurrent add; it was preserved.");
                 }
@@ -370,6 +374,10 @@ public sealed class ReluAiClientRegistrar
                     client,
                     ReluAgentRegistrationState.Registered,
                     "EndViewer was registered; restart this agent client once to load it."),
+                RegistrationInspection.Unhealthy when !options.RequireHealthyConnection => new(
+                    client,
+                    ReluAgentRegistrationState.Registered,
+                    "The exact on-demand MCP command was registered; restart this agent client once to load it."),
                 RegistrationInspection.Unhealthy => new(
                     client,
                     ReluAgentRegistrationState.Failed,
@@ -437,6 +445,7 @@ public sealed class ReluAiClientRegistrar
     private static ReluAgentClientRegistration ExistingRegistrationResult(
         string client,
         RegistrationInspection inspection,
+        bool requireHealthyConnection,
         string readyMessage,
         string conflictMessage) => inspection switch
         {
@@ -444,6 +453,10 @@ public sealed class ReluAiClientRegistrar
                 client,
                 ReluAgentRegistrationState.AlreadyRegistered,
                 readyMessage),
+            RegistrationInspection.Unhealthy when !requireHealthyConnection => new(
+                client,
+                ReluAgentRegistrationState.AlreadyRegistered,
+                "The existing user-scope registration matches the on-demand MCP command."),
             RegistrationInspection.Unhealthy => new(
                 client,
                 ReluAgentRegistrationState.Failed,

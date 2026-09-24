@@ -1,11 +1,15 @@
+using System.Buffers.Binary;
 using System.ComponentModel;
+using System.IO.Compression;
 using System.IO.Pipes;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Relu.AI.Bridge.DesktopConnector;
 using Relu.AI.Bridge.DesktopConnector.Internal;
 using PerfettoHostProgram = Relu.AI.Bridge.PerfettoNativeHost.Program;
+using PerfettoInstallerProgram = Relu.AI.Bridge.PerfettoInstaller.Program;
 
 if (args.Length == 1 && args[0] == "--relu-registration-environment-probe")
 {
@@ -39,6 +43,8 @@ finally
 {
     Directory.Delete(nativeHostTestDirectory, recursive: true);
 }
+
+await TestPerfettoInstallerBundleAsync();
 
 var context = new MutableContextProvider("selection-1");
 var slowHandlerStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1514,6 +1520,19 @@ static async Task TestRegistrarAsync()
         Equal(1, unhealthyRunner.Calls.Count, $"{fixture.Key} is not re-registered");
     }
 
+    var onDemandRunner = new FakeRegistrationRunner(new ReluRegistrationProcessResult(
+        0,
+        unhealthyClaudeFixtures["Claude disconnected"],
+        string.Empty));
+    var onDemand = await new ReluAiClientRegistrar(onDemandRunner, new EmptyCommandLocator())
+        .RegisterUserScopeAsync(new ReluAgentRegistrationOptions
+        {
+            RegisterCodex = false,
+            RequireHealthyConnection = false,
+        });
+    Equal(ReluAgentRegistrationState.AlreadyRegistered, onDemand.Clients.Single().State,
+        "on-demand MCP exact registration does not require a running viewer");
+
     var claudeAddRunner = new FakeRegistrationRunner(
         MissingClaudeRegistration(),
         MissingClaudeRegistration(),
@@ -1627,6 +1646,93 @@ static async Task TestRegistrarAsync()
     True(missingExecutable.Clients.All(item => item.State == ReluAgentRegistrationState.Unavailable),
         "missing current executable is unavailable");
     Equal(0, missingExecutableRunner.Calls.Count, "missing current executable does not invoke clients");
+}
+
+static async Task TestPerfettoInstallerBundleAsync()
+{
+    var temporary = Path.Combine(Path.GetTempPath(), $"relu-installer-bundle-test-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(temporary);
+    try
+    {
+        var sources = new Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            ["Relu.AI.Bridge.PerfettoNativeHost.exe"] = "native-host"u8.ToArray(),
+            ["runtime/node.exe"] = "node-runtime"u8.ToArray(),
+            ["app/scripts/perfetto/run-extension-bridge.mjs"] = "bridge"u8.ToArray(),
+            ["app/scripts/perfetto/desktop-mcp-proxy.mjs"] = "proxy"u8.ToArray(),
+            ["app/scripts/skills/manage-skills.mjs"] = "skills"u8.ToArray(),
+            ["app/skills/manifest.json"] = "{}"u8.ToArray(),
+        };
+        using var payload = new MemoryStream();
+        var records = new List<object>();
+        foreach (var item in sources)
+        {
+            using var archive = new MemoryStream();
+            await using (var brotli = new BrotliStream(archive, CompressionLevel.SmallestSize, leaveOpen: true))
+            {
+                await brotli.WriteAsync(item.Value);
+            }
+            var bytes = archive.ToArray();
+            var offset = payload.Length;
+            await payload.WriteAsync(bytes);
+            records.Add(new
+            {
+                path = item.Key,
+                offset,
+                compressedBytes = bytes.Length,
+                bytes = item.Value.Length,
+                sha256 = Convert.ToHexString(SHA256.HashData(item.Value)).ToLowerInvariant(),
+            });
+        }
+        var payloadBytes = payload.ToArray();
+        var contract = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            schemaVersion = 1,
+            product = "relu-perfetto-connector",
+            productVersion = "0.7.0",
+            runtimeIdentifier = "win-x64",
+            extensionId = new string('a', 32),
+            perfettoOrigin = "https://perfetto.company.example",
+            extensionUpdateUrl = "https://perfetto.company.example/relu-extension/updates.xml",
+            bridgePort = 5746,
+            payloadBytes = payloadBytes.Length,
+            payloadSha256 = Convert.ToHexString(SHA256.HashData(payloadBytes)).ToLowerInvariant(),
+            files = records,
+        });
+        var footer = new byte[28];
+        BinaryPrimitives.WriteInt64LittleEndian(footer.AsSpan(0, 8), payloadBytes.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(footer.AsSpan(8, 4), contract.Length);
+        "RELU-PERFETTO-V1"u8.CopyTo(footer.AsSpan(12));
+        var executable = Path.Combine(temporary, "setup.exe");
+        await using (var output = new FileStream(executable, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        {
+            await output.WriteAsync("MZ-test-stub"u8.ToArray());
+            await output.WriteAsync(payloadBytes);
+            await output.WriteAsync(contract);
+            await output.WriteAsync(footer);
+        }
+
+        using (var bundle = PerfettoInstallerProgram.InstallerBundle.Open(executable))
+        {
+            Equal(new string('a', 32), bundle.Contract.ExtensionId, "installer exact Extension id");
+            Equal(sources.Count, bundle.Contract.Files.Count, "installer bounded payload inventory");
+            var extracted = Path.Combine(temporary, "native-host.exe");
+            await bundle.ExtractFileAsync(bundle.Contract.Files[0], extracted);
+            True(File.ReadAllBytes(extracted).SequenceEqual(sources[bundle.Contract.Files[0].Path]),
+                "installer payload extraction checksum");
+        }
+
+        var tampered = await File.ReadAllBytesAsync(executable);
+        tampered["MZ-test-stub"u8.Length] ^= 0x01;
+        await File.WriteAllBytesAsync(executable, tampered);
+        RejectInvalidData(
+            () => PerfettoInstallerProgram.InstallerBundle.Open(executable),
+            "installer payload tamper rejection");
+    }
+    finally
+    {
+        Directory.Delete(temporary, recursive: true);
+    }
 }
 
 static ReluRegistrationProcessResult MissingCodexRegistration() => new(
