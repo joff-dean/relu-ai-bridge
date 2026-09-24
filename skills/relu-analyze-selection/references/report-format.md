@@ -22,6 +22,8 @@
 - 수치, 단위, 표본 수 또는 짧은 원문 발췌
 - truncation, sampling, filter 등 범위 제한
 
+Perfetto REF/DUT 근거는 이동 가능한 경우 `REF-1`, `DUT-1`처럼 고유 label과 exact integer-string 시작·끝을 함께 기록한다. label은 링크가 아니다. 실제 화면 이동은 이후 사용자의 명시적 요청에만 MCP mutation으로 수행한다.
+
 도구가 반환하지 않은 값이나 차트에서 육안으로 보았다고 가정한 값을 만들지 않는다.
 
 ## 가능한 원인

@@ -243,6 +243,10 @@ Read-only 분석에서 context-changed를 받으면 Claude/Codex는 Context부�
 같은 mutation을 추가하려면 unique operation ID, 중복 실행 차단, preview와 timeout 뒤
 ambiguous 판정을 별도로 설계한다.
 
+이 예제는 WPF 내부 AI 패널이나 Claude/Codex CLI child runner를 만들지 않는다. 사용자는
+데스크톱 AI client에서 분석·추가 질문·중지를 수행한다. 회사 application이 위 mutation
+계약을 별도로 구현하기 전에는 결과 label이 WPF 화면을 이동시키는 것처럼 표시하지 않는다.
+
 ## 등록·pipe 보안
 
 - Named pipe는 `CurrentUserOnly`로 만들고 TCP listener를 열지 않는다.

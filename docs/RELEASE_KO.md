@@ -1,6 +1,6 @@
 # RELU AI Bridge 외부 릴리스 및 사내 반입 묶음 생성 가이드
 
-이 문서는 embedded Windows desktop과 중앙 browser/Perfetto AI 연결 플랫폼
+이 문서는 embedded Windows desktop, Perfetto Extension/Native Host와 일반 browser AI 연결 플랫폼
 **RELU AI Bridge**의 외부 개발 결과를 검증 가능한 오프라인 묶음으로 만드는 절차다.
 Perfetto는 전체 제품이
 아니라 Connector #1이다. 회사 Perfetto fork, company-only adapter, 실제 trace,
@@ -25,7 +25,7 @@ version, adapter contract `v58`, public product baseline `v58.2`는 서로 다�
 manifest에서 각각 기록한다.
 `.NET Embedded Desktop` package version도 core와 같은 `0.7.0`이다. EndViewer 분석
 instructions는 signed service definition의 MCP `2025-06-18` `initialize` 응답에 포함한다.
-Perfetto/browser 중앙 분석 Skill suite는 자체 content version과 file별 SHA-256
+Perfetto/browser 분석 Skill suite는 자체 content version과 file별 SHA-256
 inventory를 갖는다. 이 artifact들도 같은 core tag/bundle에서만 공급하며 외부 최신
 파일을 따로 내려받아 섞지 않는다.
 Desktop release는 `ReluEmbeddedBridgeHost`, `ReluMcpStdioEntryPoint`와
@@ -36,10 +36,13 @@ executable에 포함한다. Desktop에는 별도 RELU/Node/port/token/local JSON
 Public release의 desktop artifact는 SDK와 WPF integration skeleton이며 proprietary
 EndViewer, installer, signing material 또는 완성된 exe가 아니다. 실제 single-file
 EndViewer는 내부 product release에서 별도로 build/sign/Windows 검증한다.
+Perfetto artifact도 Extension/Native Host source와 설치 계약까지 제공하며 signed CRX,
+고정 Node runtime, 회사 origin config, installer와 완성 exe는 내부 Windows/Chrome
+release pipeline에서 별도로 build/sign/검증한다.
 새 connector를 추가할 때는 core manifest의 connector 목록과 해당 connector의
 별도 manifest/schema를 추가한다.
 
-현재 릴리스의 Perfetto/browser 중앙 bridge local approval 기본값은
+현재 릴리스의 일반 browser 중앙 bridge local approval 기본값은
 `trusted_always`다. `init`과 example config는
 이를 명시하며 `policy`를 생략해도 같은 값이 적용된다. 대화형 통제가 필요한 장비만
 `manual`을 명시한다. 폐기됐거나 알 수 없는 승인 설정은 startup에서 거부한다.
@@ -112,10 +115,12 @@ SHA-256은 전송 중 손상·변조를 탐지하지만 작성자 신원을 증�
   `initialize` `instructions`를 검증했다.
 - Legacy desktop auth/HMAC vector, 중앙 desktop WebSocket과 desktop service JSON이
   release inventory에 없음을 확인했다.
-- `manage-skills.mjs verify-source`, 중앙 Perfetto/browser Skill validator와 임시
+- `manage-skills.mjs verify-source`, Perfetto/browser Skill validator와 임시
   Claude/Codex project의 install/verify/uninstall을 통과했다.
 - 공개 Perfetto exact v58.2 checkout에 copy overlay하여 connector test/typecheck를
   통과했다.
+- Perfetto Extension exact-origin build, 자동 Native Host 시작, 단일 Host/port 다중 탭,
+  same-executable desktop MCP와 user-scope Skill 설치 계약을 검증했다.
 - 회사 코드, 실제 trace, SQL 결과, screenshot, log, AI transcript, credential을
   어느 reachable commit에도 넣지 않았다.
 - commit/tag의 author, committer, tagger, 메시지, 서명 header에 사내 식별 정보나
@@ -183,8 +188,11 @@ node scripts/skills/manage-skills.mjs verify-source
 NuGet pack/version/nuspec/dependency/inventory/hash 검증은
 [사내 동기화 가이드](INTERNAL_SYNC_KO.md#sdk와-skill-사내-배포)를 따른다.
 
-개발 중에는 공개 checkout에 한해 `--mode symlink --allow-dirty-source`를 사용할 수
-있다. release/사내 통합은 clean RELU checkout의 copy overlay만 사용한다.
+개발 중 source-only 확인에는 공개 checkout에 한해
+`--mode symlink --allow-dirty-source`를 사용할 수 있다. v58.2 Vite는 symlink의
+실경로에서 bare package import를 해석하므로 typecheck/unit/build 전에는 변경을
+개발 브랜치에 커밋하고 `--mode copy --refresh`로 갱신한다. release/사내 통합도 clean
+RELU commit의 copy overlay만 사용한다.
 `--install-deps`는 공식 Perfetto dependency 설치를 실행하므로 승인된 네트워크와
 package mirror 정책을 먼저 확인한다.
 

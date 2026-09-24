@@ -189,7 +189,16 @@ node ./scripts/skills/manage-skills.mjs verify-source
 6. 다시 `get_context`를 호출해 같은 revision/선택인지 확인
 7. 사실·가설·반대 근거·확신도·데이터 한계를 분리해 답변
 
-선택이 바뀌었으면 이전 결과와 새 결과를 섞지 않는다. revision 필드가 없는 Connector에서는 opaque resource ID와 exact 선택 시작·끝을 비교하는 보수적 fallback을 쓴다.
+Perfetto 분석은 시작 때 복사한 exact 구간을 유지하므로 사용자가 별도 화면에서 pan/zoom이나
+selection을 바꿔도 그 변경을 진행 중 근거에 섞지 않는다. trace/session binding이 바뀌면
+중단한다. 반대로 selection generation 자체가 guard인 embedded/browser Connector는 선택이
+바뀌면 stale 결과를 버린다. revision 필드가 없으면 opaque resource ID와 exact 선택
+시작·끝을 비교하는 보수적 fallback을 쓴다.
+
+AI 대화·후속 요구·취소는 Claude/Codex 데스크톱 앱의 task/session에서 수행한다. Skill은
+viewer 내부 panel이나 CLI child를 전제로 하지 않는다. REF/DUT 근거는 stable label과 exact
+timestamp로 쓰고 링크로 렌더링하지 않는다. 사용자가 label 이동을 명시하면 새
+`operationId`로 `perfetto_select_area`를 호출해 실제 연결 탭을 이동한다.
 
 Skill은 local approval policy를 선택하거나 바꾸지 않는다. 새 설치의 `trusted_always`에서는
 `always` 가능한 호출이 prompt 없이 진행되고, `manual`의 미승인 호출이나

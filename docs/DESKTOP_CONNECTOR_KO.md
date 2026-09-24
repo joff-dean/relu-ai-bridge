@@ -197,6 +197,12 @@ Context부터 다시 읽는다. Handler는 cancellation을 존중해야 하며, 
 최신 Context를 사용한다. 무인 자동 호출은 비용·중단·결과 전달 정책이 필요한 별도
 orchestration 기능이며 embedded bridge의 암묵적 권한이 아니다.
 
+WPF 안에는 별도 Claude/Codex 채팅 패널이나 CLI runner를 넣지 않는다. 대화, 추가 질문과
+중지는 데스크톱 AI client가 소유한다. 현재 공개 embedded 계약은 read-only이므로 분석
+결과 label을 눌러 WPF를 이동시키는 기능은 제공하지 않는다. 향후 회사 application이
+검토된 `focus_range` 계약을 추가한 경우에만 사용자의 명시적 요청으로 실제 WPF 화면을
+이동하며 URL 또는 새 browser로 대체하지 않는다.
+
 ## Named pipe 보안 경계
 
 - desktop 경로는 TCP/WebSocket listener와 port를 열지 않는다.

@@ -19,7 +19,8 @@ usage() {
   --allow-anchor-fallback     company patch context가 다를 때 검증된 anchor 삽입 허용
   -h, --help                  도움말
 
-copy는 재현 가능한 빌드/사내 통합용, symlink는 로컬 개발용이다.
+copy는 재현 가능한 빌드/사내 통합용이다. symlink는 source-only 로컬 개발용이며
+v58.2 Vite typecheck/unit/build 전에는 copy overlay로 갱신해야 한다.
 company 대상은 copy와 clean RELU source만 허용한다.
 비관리 대상 디렉터리나 예상 밖 Perfetto 변경 사항은 덮어쓰지 않는다.
 EOF

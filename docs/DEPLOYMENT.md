@@ -1,9 +1,10 @@
 # RELU AI Bridge 운영 배포
 
-이 문서는 RELU AI Bridge 0.7.0의 두 배포 경로를 구분한다.
+이 문서는 RELU AI Bridge 0.7.0의 세 배포 경로를 구분한다.
 
 - Windows desktop은 EndViewer 단일 executable에 embedded bridge를 포함한다.
-- Perfetto/browser와 fixed API는 별도 중앙 bridge를 사용한다.
+- 중앙 Perfetto는 관리형 Chrome Extension과 사용자 PC Native Host를 사용한다.
+- 그 밖의 browser/fixed API connector는 별도 중앙 bridge를 사용한다.
 
 Desktop 사용자를 중앙 bridge 설치 절차로 안내하거나 browser에 tokenless named pipe를
 적용하면 안 된다.
@@ -13,12 +14,14 @@ Desktop 사용자를 중앙 bridge 설치 절차로 안내하거나 browser에 t
 1. **Embedded Desktop SDK**: EndViewer build에 포함하는 `net8.0` library
 2. **EndViewer application artifact**: GUI/stdio mode, runtime과 분석 instructions를
    포함한 회사 서명 단일 executable
-3. **Central RELU core**: Perfetto/browser용 Node.js MCP/Context/Data/approval server
-4. **Web Connector SDK**: 사내 browser service build에 포함하는 ESM package
-5. **Central Service registry**: browser Origin/schema/endpoint/env 이름을 가진
+3. **Perfetto Extension**: exact 회사 origin에 자동 주입되는 관리형 Manifest V3 artifact
+4. **Perfetto Native Host**: Chrome 자동 시작 Bridge와 desktop AI stdio mode를 가진 Windows executable
+5. **Central RELU core**: 일반 browser용 Node.js MCP/Context/Data/approval server
+6. **Web Connector SDK**: 사내 browser service build에 포함하는 ESM package
+7. **Central Service registry**: browser Origin/schema/endpoint/env 이름을 가진
    company-only config
-6. **Central Analysis Skill suite**: Perfetto/browser workflow용 checksum inventory
-7. **Perfetto Connector #1 overlay**: plugin과 `PerfettoV58Adapter`를 포함한 UI
+8. **Central Analysis Skill suite**: Perfetto/browser workflow용 checksum inventory
+9. **Perfetto Connector #1 overlay**: plugin과 `PerfettoV58Adapter`를 포함한 UI
 
 외부 release에는 회사 hostname, credential, EndViewer 업무 데이터와 company fork diff를
 넣지 않는다. Immutable mirror에 반입한 뒤 사내 integration repo가 signed EndViewer와
@@ -35,17 +38,25 @@ Claude/Codex ──stdio──▶ EndViewer.exe <internal MCP mode>
                       EndViewer.exe GUI
                       └─ embedded host + analysis engine
 
-Central Perfetto/browser
+Central Perfetto UI + user PC
+
+Perfetto tab ──isolated content script──▶ managed Extension background
+                                               │ Native Messaging
+                                               ▼
+Claude/Codex ──stdio MCP──────────────▶ Perfetto Native Host
+                                               └─ one loopback Bridge / many tab sockets
+
+Other central browser connectors
 
 Managed browser ──service credential──┐
-Perfetto ────────Perfetto credential──┤
                                       ▼
 Claude/Codex ───control credential── RELU @ loopback
                                       └─ fixed internal HTTPS APIs
 ```
 
 Embedded desktop은 Node.js, TCP port, RELU local JSON과 desktop connector credential을
-사용하지 않는다. 중앙 bridge는 사용자 PC의 low-privilege account에서 실행하고 여러
+사용하지 않는다. Perfetto Native Host는 패키지의 고정 Node runtime만 사용하고 Chrome이
+자동 시작·종료한다. 일반 browser 중앙 bridge는 사용자 PC의 low-privilege account에서 실행하고 여러
 사용자의 Context를 공용 server에 모으지 않는다.
 
 같은 중앙 `dataDir`에는 정확히 하나의 RELU process만 실행한다. Core instance lock을
@@ -57,6 +68,8 @@ Embedded desktop은 Node.js, TCP port, RELU local JSON과 desktop connector cred
   MCP `2025-06-18` `initialize` `instructions`, WPF lifecycle와 stable launcher
 - Desktop platform/security: signing, installer/update chain, path ACL, `CurrentUserOnly`
   pipe, managed MCP 등록
+- Perfetto platform/security: signed Extension/Native Host, exact Extension ID와 page Origin,
+  Chrome Native Messaging/force-install 정책, user-scope MCP 등록
 - Central platform/security: base config, approval policy, browser Origin/credential
   audience, egress endpoint와 OS sandbox
 - Browser service owner: bounded handler/API, output schema, service/API credential
@@ -169,21 +182,15 @@ Context에는 opaque dataset/selection과 bounded metadata만 두고 전체 로�
 항상 적용한다. 기본 Capability는 read-only다. Mutation을 추가하려면 별도 operation ID,
 deduplication과 ambiguous-result interlock을 보안 검토한다.
 
-## 중앙 bridge Credential 주입
+## 일반 browser 중앙 bridge Credential 주입
 
-이 절은 Perfetto/browser 중앙 bridge에만 적용된다.
+이 절은 Perfetto가 아닌 browser 중앙 bridge에만 적용된다.
 
 항상 필요한 값:
 
 ```text
 RELU_AI_BRIDGE_CONFIG=/approved/path/config.json
 RELU_AI_BRIDGE_TOKEN=<control credential>
-```
-
-`perfetto.enabled:true`인 장비:
-
-```text
-RELU_PERFETTO_CONNECTOR_TOKEN=<Perfetto connector credential>
 ```
 
 Browser/API service 예:
@@ -210,7 +217,7 @@ macOS는 `deploy/launchd/com.company.relu-ai-bridge.plist.example`, Linux는
 - dataDir과 승인 project만 write 허용
 - 시작 뒤 PID/port ownership과 `http://127.0.0.1:5746/health` 확인
 
-Windows에서 중앙 Perfetto/browser bridge까지 운영하는 장비만 회사 service
+Windows에서 일반 browser 중앙 bridge까지 운영하는 장비만 회사 service
 manager/Task Scheduler로 Node process를 시작한다. 이 과정은 embedded EndViewer 실행과
 별개다. Perfetto overlay/release Bash script는 WSL 또는 승인된 Linux worker를 사용한다.
 
@@ -273,10 +280,17 @@ scripts/perfetto/bootstrap.sh /absolute/work/perfetto-v58.2
 scripts/perfetto/integrate.sh --mode copy /absolute/work/perfetto-v58.2
 scripts/perfetto/verify-integration.sh /absolute/work/perfetto-v58.2
 scripts/perfetto/build-test.sh --all-tests /absolute/work/perfetto-v58.2
+node scripts/perfetto/build-extension.mjs \
+  --origin https://perfetto.company.example \
+  --output /absolute/release/relu-perfetto-extension
 ```
 
-사내 Origin은 `perfetto.allowedOrigins`에 exact origin으로 추가한다. Production build
-hash, RELU tag, connector manifest와 company Perfetto full SHA를 함께 기록한다.
+Extension을 회사 key로 서명해 stable ID를 얻고 managed Chrome 정책으로 force-install한다.
+Windows Native Host를 `win-x64` self-contained로 publish하고 고정 Node runtime 및 검토된
+`app` tree와 함께 서명·패키징한다. 사용자 범위 설치 시 Extension ID와 단일 exact Perfetto
+origin을 config/Native Messaging manifest에 고정한다. Production UI/Extension/Host build
+hash, RELU tag, connector manifest와 company Perfetto full SHA를 함께 기록한다. 이 공개
+저장소에는 회사 서명 material이나 완성 installer가 포함되지 않는다.
 
 ## Upgrade checklist
 
@@ -289,9 +303,11 @@ hash, RELU tag, connector manifest와 company Perfetto full SHA를 함께 기록
 7. Managed MCP의 IT 사전 등록과 stable signed launcher 검증
 8. `CurrentUserOnly` pipe의 cross-user 거부, GUI 종료/재시작/reconnect 검증
 9. Desktop selection cancellation, handler 전후 guard와 bounded result 검증
-10. 중앙 control/Perfetto/browser credential cross-audience 거부 확인
-11. 중앙 schema/effect/policyEpoch diff와 exact Perfetto v58.2 검증
-12. Read-only canary 뒤 production 확대
+10. Perfetto exact-origin Extension 자동 주입, Native Host 자동 시작과 token 미입력 검증
+11. 여러 Perfetto 탭의 단일 Host/port 공유와 tab별 context 분리 검증
+12. Extension/Native Host/desktop MCP credential cross-audience 거부 확인
+13. 중앙 schema/effect/policyEpoch diff와 exact Perfetto v58.2 검증
+14. Read-only canary 뒤 production 확대
 
 ## Rollback
 
@@ -302,7 +318,7 @@ hash, RELU tag, connector manifest와 company Perfetto full SHA를 함께 기록
 - Central core: 직전 검증된 RELU tag artifact/config로 되돌리고 process를 재시작한다.
 - Browser Connector: service build와 registry entry를 함께 복구한다.
 - Central credential: 의심 audience 값만 회전한다.
-- Perfetto: 직전 integration manifest의 immutable UI artifact로 복귀한다.
+- Perfetto: 직전 integration manifest의 immutable UI/Extension/Native Host artifact를 함께 복귀한다.
 - Policy epoch: 이미 사용한 값보다 낮추지 않고 archive를 유지한다.
 - Mirror: history rewrite 없이 deprecated/deny metadata로 관리한다.
 

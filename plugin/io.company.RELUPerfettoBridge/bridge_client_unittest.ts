@@ -108,7 +108,7 @@ describe('PerfettoBridgeClient', () => {
     vi.useFakeTimers();
     const sockets: FakeSocket[] = [];
     const client = new PerfettoBridgeClient({
-      endpoint: 'ws://127.0.0.1:5746/perfetto/ws',
+      endpoint: 'ws://127.0.0.1:5746/perfetto/extension-ws',
       token: TOKEN,
       origin: ORIGIN,
       clientId: 'client-1',
@@ -179,7 +179,7 @@ describe('PerfettoBridgeClient', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
     const sockets: FakeSocket[] = [];
     const client = new PerfettoBridgeClient({
-      endpoint: 'ws://127.0.0.1:5746/perfetto/ws',
+      endpoint: 'ws://127.0.0.1:5746/perfetto/extension-ws',
       token: TOKEN,
       origin: ORIGIN,
       clientId: 'client-1',
@@ -280,7 +280,7 @@ describe('PerfettoBridgeClient', () => {
     vi.useFakeTimers();
     const sockets: FakeSocket[] = [];
     const client = new PerfettoBridgeClient({
-      endpoint: 'ws://127.0.0.1:5746/perfetto/ws',
+      endpoint: 'ws://127.0.0.1:5746/perfetto/extension-ws',
       token: TOKEN,
       origin: ORIGIN,
       clientId: 'client-1',
@@ -310,7 +310,7 @@ describe('PerfettoBridgeClient', () => {
     vi.useFakeTimers();
     const sockets: FakeSocket[] = [];
     const client = new PerfettoBridgeClient({
-      endpoint: 'ws://127.0.0.1:5746/perfetto/ws',
+      endpoint: 'ws://127.0.0.1:5746/perfetto/extension-ws',
       token: TOKEN,
       origin: ORIGIN,
       clientId: 'client-1',
@@ -371,7 +371,7 @@ function createClient(
   adapter = createAdapter(),
 ): PerfettoBridgeClient {
   return new PerfettoBridgeClient({
-    endpoint: 'ws://127.0.0.1:5746/perfetto/ws',
+    endpoint: 'ws://127.0.0.1:5746/perfetto/extension-ws',
     token: TOKEN,
     origin: ORIGIN,
     clientId: 'client-1',

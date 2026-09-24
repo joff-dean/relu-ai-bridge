@@ -9,23 +9,23 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "037bec10d8d14a27e175858dbc6ee8ec02c148530d0fce54a19ecc84e9ab8892",
-          "bytes": 3887
+          "sha256": "149f7f6fe33c0470ff967df3c9a68f51d761dbf9130d3cd97db29b3fd38577fb",
+          "bytes": 4488
         },
         {
           "path": "references/android-log-viewer.md",
-          "sha256": "fb51fd9708816fab2fff57e84d7fd487c3c3a7e2558ec4a272d488ac8a733c0c",
-          "bytes": 3043
+          "sha256": "ecc92d7a2334b189f7ea1c1c2ea5a03cd3691f5701267839e2ee87e36e120958",
+          "bytes": 3300
         },
         {
           "path": "references/perfetto.md",
-          "sha256": "718e6179ce5f699024cf2799fe32938e3fdcdc6e0c69987ec0aed647b3906935",
-          "bytes": 2906
+          "sha256": "7dec9a376ec12d795e76a9b6a2f62c1a57f74d24596e593606f873b5cffaebfb",
+          "bytes": 4079
         },
         {
           "path": "references/report-format.md",
-          "sha256": "944f25458ccf3c8be5f0897e141619f25c5584516e4cfdfb612d585cd41a19a6",
-          "bytes": 1838
+          "sha256": "6c2c3d03120f11d21f375eba34d16c55168829c19a6285220386dc23d79a929f",
+          "bytes": 2116
         }
       ]
     }

@@ -12,6 +12,9 @@ async function configFiles(env) {
   raw.roots[0].path = env.root;
   raw.dataDir = env.dataDir;
   raw.connectors.services = [service];
+  raw.server.allowedChromeExtensionIds = ['a'.repeat(32)];
+  raw.perfetto.enabled = true;
+  raw.perfetto.allowedOrigins = ['https://perfetto.company.example'];
   raw.commandProfiles = {
     test: { program: 'npm', args: ['test'], allowExtraArgs: false, timeoutMs: 120_000 },
   };
@@ -27,19 +30,18 @@ const environment = {
   RELU_LOG_API_AUTHORIZATION: 'Bearer log_api_credential_that_is_long_enough',
 };
 
-test('initial config generates separate control and Perfetto connector tokens without persisting them', async (t) => {
+test('initial generic bridge config keeps Perfetto disabled for its dedicated Native Host path', async (t) => {
   const env = await fixture();
   t.after(() => env.cleanup());
   const target = path.join(env.directory, 'generated', 'local.json');
   const initialized = await createInitialConfig(target, env.root);
   assert.match(initialized.token, /^relu_[a-f0-9]{32}$/u);
-  assert.match(initialized.perfettoToken, /^relu_perfetto_[a-f0-9]{32}$/u);
-  assert.notEqual(initialized.token, initialized.perfettoToken);
   const raw = JSON.parse(await fs.readFile(target, 'utf8'));
   assert.equal(raw.perfetto.tokenEnv, 'RELU_PERFETTO_CONNECTOR_TOKEN');
   const serialized = JSON.stringify(raw);
   assert.equal(serialized.includes(initialized.token), false);
-  assert.equal(serialized.includes(initialized.perfettoToken), false);
+  assert.equal(raw.perfetto.enabled, false);
+  assert.deepEqual(raw.perfetto.allowedOrigins, []);
   assert.equal(raw.roots[0].readOnly, true);
   assert.equal(raw.permissions.write, false);
   assert.equal(raw.permissions.commands, false);
@@ -369,11 +371,18 @@ test('connector service refuses a missing or short service-specific token', asyn
 test('enabled Perfetto connector requires its dedicated token', async (t) => {
   const env = await fixture();
   t.after(() => env.cleanup());
-  const { file } = await configFiles(env);
+  const {raw, file} = await configFiles(env);
   await assert.rejects(() => loadConfig({
     configPath: file,
     environment: { ...environment, RELU_PERFETTO_CONNECTOR_TOKEN: 'short' },
   }), /RELU_PERFETTO_CONNECTOR_TOKEN/u);
+  raw.perfetto.allowedOrigins.push('https://second-perfetto.company.example');
+  await fs.writeFile(file, JSON.stringify(raw));
+  await assert.rejects(() => loadConfig({configPath: file, environment}), /exactly one/u);
+  raw.perfetto.allowedOrigins.pop();
+  raw.perfetto.websocketPath = '/perfetto/ws';
+  await fs.writeFile(file, JSON.stringify(raw));
+  await assert.rejects(() => loadConfig({configPath: file, environment}), /removed/u);
 });
 
 test('disabled Perfetto connector does not require a token value', async (t) => {

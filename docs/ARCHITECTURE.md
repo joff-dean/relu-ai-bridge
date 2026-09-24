@@ -1,10 +1,11 @@
 # RELU AI Bridge 아키텍처
 
 RELU AI Bridge 0.7.0은 하나의 transport를 모든 대상에 강요하지 않는다. Windows desktop
-앱은 application 안에 bridge를 포함하는 embedded 경로를 사용하고, Perfetto/browser와
-사내 HTTP API는 별도 중앙 bridge 경로를 사용한다.
+앱은 application 안에 bridge를 포함하는 embedded 경로를 사용한다. 중앙 Perfetto UI는
+관리형 Chrome Extension과 사용자 PC Native Host를 사용하고, 그 밖의 browser/사내 HTTP
+API는 별도 중앙 bridge 경로를 사용한다.
 
-## 두 실행 토폴로지
+## 세 실행 토폴로지
 
 ```text
 A. Embedded desktop
@@ -17,25 +18,31 @@ Claude / Codex ──stdio──▶ EndViewer.exe <internal MCP mode>
                          ├─ live selection Context
                          └─ existing analysis engine
 
-B. Central Perfetto/browser bridge
+B. Central Perfetto UI + local Native Host
+
+Perfetto tab ──content script──▶ Extension ──Native Messaging──▶ Native Host
+Claude / Codex ──stdio MCP──────────────────────────────────────▶ │
+                                                               └─ loopback Bridge
+
+C. Other browser central bridge
 
 Claude / Codex ──authenticated HTTP MCP──▶ RELU AI Bridge @ loopback
-Browser/Perfetto ──origin-bound WS────────▶ session/capability registry
+Browser ──────────origin-bound WS────────▶ session/capability registry
 Fixed API       ◀──allowlisted HTTPS───────┘
 ```
 
 두 경로는 Context/Capability/stale-target 원칙을 공유하지만 process와 credential 경계가
 다르다.
 
-| 항목 | Embedded desktop | 중앙 Perfetto/browser |
-| --- | --- | --- |
-| 배포 | EndViewer 단일 실행 파일에 포함 | RELU server를 별도 배포 |
-| MCP transport | stdio | Streamable HTTP |
-| app 연결 | `CurrentUserOnly` named pipe | loopback WebSocket/HTTPS |
-| Node.js | 필요 없음 | 필요 |
-| RELU local JSON/port | 없음 | 있음 |
-| 연결 credential | 없음 | audience별 credential |
-| Capability authority | 서명된 app binary/source | server-owned registry config |
+| 항목 | Embedded desktop | Perfetto | 일반 browser |
+| --- | --- | --- | --- |
+| 배포 | EndViewer 단일 실행 파일 | 관리형 Extension + Native Host | RELU server |
+| MCP transport | stdio | 같은 Host의 stdio | Streamable HTTP |
+| app 연결 | `CurrentUserOnly` named pipe | Extension background WebSocket | origin-bound WebSocket/HTTPS |
+| Node.js | 필요 없음 | Host package에 고정 | 필요 |
+| 사용자 조작 | 앱 실행 | Perfetto URL 열기 | service별 운영 절차 |
+| credential | 없음 | Host가 실행마다 생성 | audience별 secret |
+| Capability authority | 서명된 app binary/source | server-owned Perfetto registry | server-owned registry config |
 
 Desktop 앱을 중앙 `/relu/desktop/ws`에 연결하는 이전 토폴로지는 지원하지 않는다.
 Desktop token과 외부 service JSON도 사용하지 않는다.
@@ -123,9 +130,9 @@ AI client가 등록된 EndViewer 절대 경로에서 실행한다. GUI host가 �
 분리하지는 않는다. EndViewer/AuthentiCode 서명, 안정된 launcher 경로 ACL, update
 manifest와 application allowlisting이 배포 신뢰의 일부다.
 
-## 중앙 Context Plane
+## 일반 browser 중앙 Context Plane
 
-이하 절은 Perfetto/browser 중앙 bridge에만 적용된다.
+이 절은 Perfetto가 아닌 browser 중앙 bridge에 적용된다.
 
 Browser SDK는 연결 시 service ID와 fresh client nonce를 보내고, bridge는 exact Origin,
 service와 audience별 connector credential로 server proof를 만든다. Client가 proof를
@@ -252,7 +259,9 @@ Audience를 재사용하지 않고 raw 값을 config, URL, Context, result 또�
 
 ```text
 Perfetto v58.2 UI plugin
-  → /perfetto/ws exact Origin + nonce/HMAC proof
+  → exact-origin Chrome Extension (document_start)
+  → auto-start user-scope Native Host
+  → /perfetto/extension-ws exact Extension/page Origin + nonce/HMAC proof
   → server-owned closed method set
   → PerfettoV58Adapter
   → tab 내부 trace.engine

@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "extensionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "perfettoOrigin": "https://perfetto.company.example",
+  "bridgePort": 5746
+}
