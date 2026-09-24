@@ -475,11 +475,18 @@ Java는 11 이상으로 버전을 고정하고 아래 스크립트의 사전 검
 
 공식 v58.2 통합본은 회사 Perfetto exact origin으로 생성한 Manifest V3 Extension과 함께
 검증한다. Extension은 회사 signing key/managed policy로 ID를 고정하고 `document_start`
-content script가 기본 plugin을 자동 연결하는지 확인한다. Windows Native Host 배포물에는
-서명된 `Relu.AI.Bridge.PerfettoNativeHost.exe`, 고정 Node runtime과 검토된 `app` tree만
-포함한다. 사용자 범위 설치는 exact Extension ID/origin을 config와 Chrome Native Messaging
-manifest에 고정하고, 같은 실행 파일의 `--relu-mcp-stdio`를 user-scope `relu-perfetto`로
-등록한다. 다른 등록과 managed policy 충돌은 덮어쓰지 않는다.
+content script가 기본 plugin을 자동 연결하는지 확인한다. 서명 CRX와 update manifest는
+설치 계약의 exact 사내 HTTPS URL에 게시한다. Windows release worker는 검증된 `node.exe`
+SHA-256을 지정해 `build-windows-installer.mjs`로 Native Host, 고정 Node runtime, 검토된
+`app`/Skill tree를 한 `RELU-Perfetto-Setup.exe`에 묶고 append가 끝난 최종 EXE를 서명한다.
+
+사용자는 관리자 권한 없이 이 파일을 한 번 실행한다. Installer는 payload/file checksum과
+canonical containment를 검증해 `%LOCALAPPDATA%\RELU\PerfettoConnector`에 설치하고 exact
+Extension ID/origin/update URL, Chrome user policy와 Native Messaging manifest를 고정한다.
+같은 Native Host 실행 파일의 `--relu-mcp-stdio`를 user-scope `relu-perfetto`로 등록하고
+manifest-verified Skill도 설치한다. 다른 등록, 수정된 Skill과 managed policy 충돌은
+덮어쓰지 않는다. 외부 CRX 자동 설치는 회사 관리 Windows/Chrome에서만 검증하며 개인
+Chrome sideload 경로는 만들지 않는다.
 
 Perfetto 페이지를 열 때 Chrome이 Host/Bridge를 자동 시작하고 사용자 token 입력이나 별도
 launcher 실행이 없어야 한다. REF/DUT 여러 탭은 한 Host/port를 공유하면서 각각 별도
@@ -498,7 +505,8 @@ AI 보고서의 REF/DUT 근거는 URL/button이 아니라 stable label과 exact 
 생성하지 않고, trace/session 교체 뒤 stale selector는 기존 binding 검사로 거부한다.
 
 Windows 반입본은 WSL/Linux CI에서 copy overlay와 build를 완료한 뒤 native Windows에서
-Extension CRX/정책과 Native Host 패키지를 설치해 중앙 Perfetto URL로 검증한다. Host는
+서명된 단일 Installer를 한 번 실행해 Extension CRX/정책과 Native Host를 설치하고 중앙
+Perfetto URL로 검증한다. Host는
 패키지 안의 고정 `runtime\node.exe`와 `app\scripts\perfetto`만 argument array,
 `UseShellExecute=false`로 실행하고 외부 `PATH`의 Node를 실행하지 않는다. Codex/Claude 자동
 등록은 SID-bound `Global\` mutex 안에서 공식 CLI의 get/add/get을 수행하며 같은 MCP 이름의

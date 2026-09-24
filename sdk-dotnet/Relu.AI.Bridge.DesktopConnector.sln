@@ -8,6 +8,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Relu.AI.Bridge.DesktopConne
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Relu.AI.Bridge.PerfettoNativeHost", "src\Relu.AI.Bridge.PerfettoNativeHost\Relu.AI.Bridge.PerfettoNativeHost.csproj", "{3A96867F-FAE8-4E0B-A88C-82AF0C8FA41A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Relu.AI.Bridge.PerfettoInstaller", "src\Relu.AI.Bridge.PerfettoInstaller\Relu.AI.Bridge.PerfettoInstaller.csproj", "{654D7B2A-4B8A-4B52-A20F-CB257B16DA8F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,5 +28,9 @@ Global
 		{3A96867F-FAE8-4E0B-A88C-82AF0C8FA41A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3A96867F-FAE8-4E0B-A88C-82AF0C8FA41A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3A96867F-FAE8-4E0B-A88C-82AF0C8FA41A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{654D7B2A-4B8A-4B52-A20F-CB257B16DA8F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{654D7B2A-4B8A-4B52-A20F-CB257B16DA8F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{654D7B2A-4B8A-4B52-A20F-CB257B16DA8F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{654D7B2A-4B8A-4B52-A20F-CB257B16DA8F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

@@ -11,5 +11,6 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj" />
     <ProjectReference Include="../../src/Relu.AI.Bridge.PerfettoNativeHost/Relu.AI.Bridge.PerfettoNativeHost.csproj" />
+    <ProjectReference Include="../../src/Relu.AI.Bridge.PerfettoInstaller/Relu.AI.Bridge.PerfettoInstaller.csproj" />
   </ItemGroup>
 </Project>

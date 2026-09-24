@@ -306,9 +306,13 @@ grep -Fq "'$plugin_id'" \
 perfetto_extension_manifest="$PERFETTO_PROJECT_ROOT/perfetto-extension/manifest.json"
 perfetto_extension_background="$PERFETTO_PROJECT_ROOT/perfetto-extension/background.js"
 perfetto_native_host="$PERFETTO_PROJECT_ROOT/sdk-dotnet/src/Relu.AI.Bridge.PerfettoNativeHost/Program.cs"
+perfetto_installer="$PERFETTO_PROJECT_ROOT/sdk-dotnet/src/Relu.AI.Bridge.PerfettoInstaller/Program.cs"
+perfetto_installer_builder="$PERFETTO_PROJECT_ROOT/scripts/perfetto/build-windows-installer.mjs"
 [ -f "$perfetto_extension_manifest" ] || die "Perfetto Extension manifest가 없습니다"
 [ -f "$perfetto_extension_background" ] || die "Perfetto Extension background가 없습니다"
 [ -f "$perfetto_native_host" ] || die "Perfetto Native Host source가 없습니다"
+[ -f "$perfetto_installer" ] || die "Perfetto one-click Installer source가 없습니다"
+[ -f "$perfetto_installer_builder" ] || die "Perfetto Installer build script가 없습니다"
 grep -Fq '"name": "RELU Perfetto Connector"' "$perfetto_extension_manifest" || \
   die "Perfetto Extension identity가 다릅니다"
 grep -Fq '"version": "0.7.0"' "$perfetto_extension_manifest" || \
@@ -319,6 +323,14 @@ grep -Fq 'extension-ws' "$perfetto_extension_background" || \
   die "Perfetto Extension WebSocket boundary가 다릅니다"
 grep -Fq 'ReluMcpStdioEntryPoint.IsStdioMode(args)' "$perfetto_native_host" || \
   die "Perfetto Native Host same-executable MCP mode가 없습니다"
+grep -Fq 'ExtensionInstallForcelist' "$perfetto_installer" || \
+  die "Perfetto Installer managed Extension 자동 설치 계약이 없습니다"
+grep -Fq 'Registry.CurrentUser' "$perfetto_installer" || \
+  die "Perfetto Installer user-scope 계약이 없습니다"
+grep -Fq 'RELU-PERFETTO-V1' "$perfetto_installer_builder" || \
+  die "Perfetto Installer bounded payload 계약이 없습니다"
+[ ! -e "$PERFETTO_PROJECT_ROOT/scripts/perfetto/install-native-host.ps1" ] || \
+  die "수동 Native Host 설치 경로가 남아 있습니다"
 
 if [ "$#" -eq 1 ]; then
   perfetto_dir=$(canonical_existing_dir "$1")

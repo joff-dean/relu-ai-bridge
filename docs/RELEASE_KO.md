@@ -36,9 +36,10 @@ executable에 포함한다. Desktop에는 별도 RELU/Node/port/token/local JSON
 Public release의 desktop artifact는 SDK와 WPF integration skeleton이며 proprietary
 EndViewer, installer, signing material 또는 완성된 exe가 아니다. 실제 single-file
 EndViewer는 내부 product release에서 별도로 build/sign/Windows 검증한다.
-Perfetto artifact도 Extension/Native Host source와 설치 계약까지 제공하며 signed CRX,
-고정 Node runtime, 회사 origin config, installer와 완성 exe는 내부 Windows/Chrome
-release pipeline에서 별도로 build/sign/검증한다.
+Perfetto artifact는 Extension/Native Host와 one-click Installer source,
+`build-windows-installer.mjs`까지 제공한다. signed CRX, 고정 Node runtime, 회사
+Origin/Extension/update URL이 컴파일된 빌드·서명 완료 EXE는 내부 Windows/Chrome release
+pipeline에서 별도로 생성·서명·검증한다.
 새 connector를 추가할 때는 core manifest의 connector 목록과 해당 connector의
 별도 manifest/schema를 추가한다.
 
@@ -119,8 +120,9 @@ SHA-256은 전송 중 손상·변조를 탐지하지만 작성자 신원을 증�
   Claude/Codex project의 install/verify/uninstall을 통과했다.
 - 공개 Perfetto exact v58.2 checkout에 copy overlay하여 connector test/typecheck를
   통과했다.
-- Perfetto Extension exact-origin build, 자동 Native Host 시작, 단일 Host/port 다중 탭,
-  same-executable desktop MCP와 user-scope Skill 설치 계약을 검증했다.
+- Perfetto Extension exact-origin build, one-click Installer payload/file checksum과 user-scope
+  정책 충돌 보존, 자동 Native Host 시작, 단일 Host/port 다중 탭, same-executable desktop
+  MCP와 user-scope Skill 설치 계약을 검증했다.
 - 회사 코드, 실제 trace, SQL 결과, screenshot, log, AI transcript, credential을
   어느 reachable commit에도 넣지 않았다.
 - commit/tag의 author, committer, tagger, 메시지, 서명 header에 사내 식별 정보나

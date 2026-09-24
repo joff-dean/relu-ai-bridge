@@ -285,12 +285,34 @@ node scripts/perfetto/build-extension.mjs \
   --output /absolute/release/relu-perfetto-extension
 ```
 
-Extension을 회사 key로 서명해 stable ID를 얻고 managed Chrome 정책으로 force-install한다.
-Windows Native Host를 `win-x64` self-contained로 publish하고 고정 Node runtime 및 검토된
-`app` tree와 함께 서명·패키징한다. 사용자 범위 설치 시 Extension ID와 단일 exact Perfetto
-origin을 config/Native Messaging manifest에 고정한다. Production UI/Extension/Host build
-hash, RELU tag, connector manifest와 company Perfetto full SHA를 함께 기록한다. 이 공개
-저장소에는 회사 서명 material이나 완성 installer가 포함되지 않는다.
+Extension을 회사 key로 서명해 stable ID를 얻고 CRX/update manifest를 사내 HTTPS URL에
+게시한다. 외부 CRX 무인 설치는 Active Directory/Azure AD/Chrome Enterprise Core로 관리되는
+Windows Chrome에서만 지원한다. 개인 Chrome 보호를 우회하는 sideload는 지원하지 않는다.
+
+Windows release worker는 검증된 `node.exe` SHA-256과 exact Origin/Extension ID/update URL을
+`build-windows-installer.mjs`에 전달한다. 이 스크립트는 Native Host와 Installer stub을
+`win-x64` 또는 `win-arm64` self-contained single-file로 publish하고, 고정 Node runtime,
+검토된 `app`/Skill tree와 파일별 checksum 계약을 한 `RELU-Perfetto-Setup.exe`에 붙인다.
+그 최종 EXE를 append 이후 회사 code-signing key로 서명한다.
+
+```powershell
+node .\scripts\perfetto\build-windows-installer.mjs `
+  --origin https://perfetto.company.example `
+  --extension-id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa `
+  --extension-update-url https://perfetto.company.example/relu-extension/updates.xml `
+  --node-exe C:\release-inputs\node.exe `
+  --node-sha256 <검증된-64자리-sha256> `
+  --output C:\release\RELU-Perfetto-Setup.exe `
+  --runtime-id win-x64
+```
+
+사용자는 관리자 권한 없이 서명된 EXE를 한 번 실행한다. Installer는 payload와 파일별
+checksum을 다시 검증해 `%LOCALAPPDATA%\RELU\PerfettoConnector`의 versioned directory에
+설치하고, exact Chrome user policy, user-scope Native Host, Codex/Claude MCP와 Skill을
+구성한다. 기존 조직 `ExtensionSettings`나 같은 이름의 다른 등록은 덮어쓰지 않는다.
+최초 설치 뒤 Chrome과 AI 앱만 한 번 재시작한다. Production UI/Extension/Installer hash,
+RELU tag, connector manifest와 company Perfetto full SHA를 함께 기록한다. 이 공개 저장소에는
+회사 서명 CRX, 고정 Node runtime, signing material이나 빌드·서명 완료된 installer가 없다.
 
 ## Upgrade checklist
 
@@ -303,11 +325,12 @@ hash, RELU tag, connector manifest와 company Perfetto full SHA를 함께 기록
 7. Managed MCP의 IT 사전 등록과 stable signed launcher 검증
 8. `CurrentUserOnly` pipe의 cross-user 거부, GUI 종료/재시작/reconnect 검증
 9. Desktop selection cancellation, handler 전후 guard와 bounded result 검증
-10. Perfetto exact-origin Extension 자동 주입, Native Host 자동 시작과 token 미입력 검증
-11. 여러 Perfetto 탭의 단일 Host/port 공유와 tab별 context 분리 검증
-12. Extension/Native Host/desktop MCP credential cross-audience 거부 확인
-13. 중앙 schema/effect/policyEpoch diff와 exact Perfetto v58.2 검증
-14. Read-only canary 뒤 production 확대
+10. 단일 Installer의 payload/file checksum, 비관리 Chrome 무인 설치 불가와 기존 정책/등록 보존 검증
+11. Perfetto exact-origin Extension 자동 주입, Native Host 자동 시작과 token 미입력 검증
+12. 여러 Perfetto 탭의 단일 Host/port 공유와 tab별 context 분리 검증
+13. Extension/Native Host/desktop MCP credential cross-audience 거부 확인
+14. 중앙 schema/effect/policyEpoch diff와 exact Perfetto v58.2 검증
+15. Read-only canary 뒤 production 확대
 
 ## Rollback
 

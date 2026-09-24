@@ -107,6 +107,40 @@ test('desktop .NET SDK embeds the same-executable MCP and current-user pipe cont
   assert.doesNotMatch(project, /<PackageReference\b/u);
 });
 
+test('Perfetto Windows installer remains one-click, user-scoped, and payload-verified', async () => {
+  const installer = await read(
+    'sdk-dotnet/src/Relu.AI.Bridge.PerfettoInstaller/Program.cs',
+  );
+  const project = await read(
+    'sdk-dotnet/src/Relu.AI.Bridge.PerfettoInstaller/Relu.AI.Bridge.PerfettoInstaller.csproj',
+  );
+  const manifest = await read(
+    'sdk-dotnet/src/Relu.AI.Bridge.PerfettoInstaller/app.manifest',
+  );
+  const nativeHost = await read(
+    'sdk-dotnet/src/Relu.AI.Bridge.PerfettoNativeHost/Program.cs',
+  );
+
+  assert.match(project, /<OutputType>WinExe<\/OutputType>/u);
+  assert.match(project, /<ApplicationManifest>app\.manifest<\/ApplicationManifest>/u);
+  assert.doesNotMatch(project, /<PackageReference\b/u);
+  assert.match(manifest, /requestedExecutionLevel level="asInvoker"/u);
+  assert.match(installer, /IsElevatedOrUnknown\(\)/u);
+  assert.match(installer, /Environment\.SpecialFolder\.LocalApplicationData/u);
+  assert.match(installer, /Registry\.CurrentUser\.CreateSubKey\(NativeHostRegistryPath/u);
+  assert.match(installer, /Registry\.CurrentUser\.CreateSubKey\(ChromeForcelistRegistryPath/u);
+  assert.doesNotMatch(installer, /Registry\.LocalMachine\.CreateSubKey/u);
+  assert.match(installer, /PayloadSha256/u);
+  assert.match(installer, /BrotliStream/u);
+  assert.match(installer, /FileAttributes\.ReparsePoint/u);
+  assert.match(installer, /Directory\.Move\(staging, VersionDirectory\)/u);
+  assert.match(installer, /UseShellExecute = false/u);
+  assert.match(installer, /start\.ArgumentList\.Add\("--relu-register-ai-clients"\)/u);
+  assert.match(nativeHost, /RequireHealthyConnection = false/u);
+  assert.match(nativeHost, /ReluAgentRegistrationState\.Registered/u);
+  assert.match(nativeHost, /ReluAgentRegistrationState\.AlreadyRegistered/u);
+});
+
 test('embedded WPF capabilities remain bounded, schema-checked, and selection-bound', async () => {
   const host = await read(
     'sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/ReluEmbeddedBridgeHost.cs',

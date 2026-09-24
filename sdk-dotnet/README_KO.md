@@ -12,8 +12,11 @@ EndViewer 팀이 통합·publish·서명한 뒤에야 아래의 단일 실행 �
 같은 solution의 `Relu.AI.Bridge.PerfettoNativeHost`는 WPF embedded 경로가 아니라 중앙
 Perfetto용 별도 Windows executable source다. 관리형 Chrome Extension이 Native Messaging으로
 자동 시작하며 패키지의 고정 Node runtime/RELU app만 실행한다. 그 실행 파일의
-`--relu-mcp-stdio`가 Codex/Claude user-scope `relu-perfetto` MCP도 제공한다. 공개 저장소에는
-회사 서명 binary, Node 배포물이나 installer가 포함되지 않는다.
+`--relu-mcp-stdio`가 Codex/Claude user-scope `relu-perfetto` MCP도 제공한다.
+`Relu.AI.Bridge.PerfettoInstaller`와 `build-windows-installer.mjs`는 이 구성요소를 회사
+Origin/Extension/update URL에 고정한 single-file `RELU-Perfetto-Setup.exe`로 만드는
+one-click 설치 source다. 공개 저장소에는 회사 서명 CRX, Node 배포물, signing material 또는
+빌드·서명 완료 installer가 포함되지 않는다.
 
 ## 배포 계약
 

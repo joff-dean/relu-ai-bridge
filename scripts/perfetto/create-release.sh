@@ -115,6 +115,8 @@ git -c core.quotePath=true -C "$PERFETTO_PROJECT_ROOT" ls-tree -r "$release_tag"
   requirements.txt requirements.lock pyproject.toml uv.lock Cargo.toml Cargo.lock \
   sdk-dotnet/Relu.AI.Bridge.DesktopConnector.sln \
   sdk-dotnet/src/Relu.AI.Bridge.DesktopConnector/Relu.AI.Bridge.DesktopConnector.csproj \
+  sdk-dotnet/src/Relu.AI.Bridge.PerfettoInstaller/Relu.AI.Bridge.PerfettoInstaller.csproj \
+  sdk-dotnet/src/Relu.AI.Bridge.PerfettoNativeHost/Relu.AI.Bridge.PerfettoNativeHost.csproj \
   sdk-dotnet/tests/Relu.AI.Bridge.DesktopConnector.Tests/Relu.AI.Bridge.DesktopConnector.Tests.csproj \
   examples/wpf-android-log-viewer/WpfAndroidLogViewer.Integration.csproj \
   skills/manifest.json \
